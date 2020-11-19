@@ -1,0 +1,108 @@
+cabal-version: 2.2
+
+name:           thexa
+version:        0.1.0.0
+synopsis:       Template Haskell lEXical Analyzer
+build-type:     Simple
+
+common deps
+  build-depends:
+      base >=4.8 && <5
+    , bytestring
+    , containers
+    , megaparsec
+    , mtl
+    , prelude-prime
+
+common lang
+  default-language: Haskell2010
+  default-extensions:
+    AllowAmbiguousTypes
+    BangPatterns
+    BinaryLiterals
+    BlockArguments
+    ConstraintKinds
+    DataKinds
+    DefaultSignatures
+    DeriveAnyClass
+    DeriveGeneric
+    DerivingStrategies
+    DerivingVia
+    DuplicateRecordFields
+    EmptyCase
+    ExplicitNamespaces
+    FlexibleContexts
+    FlexibleInstances
+    FunctionalDependencies
+    GADTs
+    GeneralizedNewtypeDeriving
+    ImportQualifiedPost
+    InstanceSigs
+    LambdaCase
+    LiberalTypeSynonyms
+    MagicHash
+    MultiWayIf
+    MultiParamTypeClasses
+    NamedFieldPuns
+    NoImplicitPrelude
+    NoStarIsType
+    OverloadedLabels
+    OverloadedLists
+    OverloadedStrings
+    PartialTypeSignatures
+    PatternSynonyms
+    PolyKinds
+    RankNTypes
+    RecordWildCards
+    RecursiveDo
+    RoleAnnotations
+    ScopedTypeVariables
+    StandaloneDeriving
+    StandaloneKindSignatures
+    TemplateHaskell
+    TupleSections
+    TypeApplications
+    TypeFamilies
+    TypeFamilyDependencies
+    TypeOperators
+    ViewPatterns
+
+common opts
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wredundant-constraints
+    -fwarn-tabs
+
+common exe-opts
+  import: opts
+  ghc-options:
+    -threaded
+    -rtsopts
+    -with-rtsopts=-N
+
+library
+  import: deps, lang, opts
+  hs-source-dirs: src
+  exposed-modules:
+    Thexa.Regex.AST
+    Thexa.Regex.CharRangeSet
+    Thexa.Regex.Parser
+
+test-suite spec
+  import: deps, lang, exe-opts
+  type: exitcode-stdio-1.0
+  build-tool-depends: hspec-discover:hspec-discover
+
+  hs-source-dirs: spec
+  main-is: Spec.hs
+  other-modules:
+    Thexa.Regex.ParserSpec
+
+  build-depends:
+      thexa
+    , hspec
+    , hspec-megaparsec
+    , QuickCheck
