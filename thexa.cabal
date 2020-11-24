@@ -13,6 +13,7 @@ common deps
     , megaparsec
     , mtl
     , prelude-prime
+    , primitive
 
 common lang
   default-language: Haskell2010
@@ -87,9 +88,14 @@ library
   import: deps, lang, opts
   hs-source-dirs: src
   exposed-modules:
+    Thexa.IntLike.Class
+    Thexa.IntLike.Map
+    Thexa.IntLike.Set
     Thexa.Regex.AST
-    Thexa.Regex.CharRangeSet
+    Thexa.Regex.Compiler
     Thexa.Regex.Parser
+    Thexa.Regex.RangeSet
+    Thexa.NFA
 
 test-suite spec
   import: deps, lang, exe-opts
@@ -100,6 +106,7 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
     Thexa.Regex.ParserSpec
+    Thexa.Regex.RangeSetSpec
 
   build-depends:
       thexa
