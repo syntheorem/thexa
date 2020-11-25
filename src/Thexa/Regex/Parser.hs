@@ -14,16 +14,19 @@ import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P
 import Text.Megaparsec.Char.Lexer qualified as L
 
-import Thexa.Regex.AST
+import Thexa.Regex.AST (RegexAST)
+import Thexa.Regex.AST qualified as RE
+import Thexa.Regex.CharSet.AST (CharSetAST)
+import Thexa.Regex.CharSet.AST qualified as CS
 
 type Parser = P.Parsec Void String
 
 type ParseErrors = P.ParseErrorBundle String Void
 
-parseRegex :: String -> Either ParseErrors RegexQ
+parseRegex :: String -> Either ParseErrors RegexAST
 parseRegex = P.parse (regex <* P.eof) ""
 
-parseCharSet :: String -> Either ParseErrors CharSetQ
+parseCharSet :: String -> Either ParseErrors CharSetAST
 parseCharSet = P.parse (charSet <* P.eof) ""
 
 -- | Pretty-print the parse errors.
@@ -35,78 +38,85 @@ parseErrorsPretty = P.errorBundlePretty
 ------------------
 
 -- | Top-level parser used by the regex quasiquoter.
-regex :: Parser RegexQ
+regex :: Parser RegexAST
 regex = whitespace >> P.choice
-  [ symbol "|" >> (reAlt REEmpty <$> regex)
+  [ symbol "|" >> (RE.alt RE.Empty <$> regex)
   , regexAtomRepeat >>= regexRec
-  , pure REEmpty
+  , pure RE.Empty
   ]
 
 -- | Recursive case of the regex parser, where we pass in the prefix of the regex that we've already
 -- parsed, and then either form a sequence or alternative with the rest of the regex.
-regexRec :: RegexQ -> Parser RegexQ
+regexRec :: RegexAST -> Parser RegexAST
 regexRec re = P.choice
-  [ symbol "|" >> (reAlt re <$> regex)
-  , (reSeq re <$> regexAtomRepeat) >>= regexRec
+  [ symbol "|" >> (RE.alt re <$> regex)
+  , (RE.append re <$> regexAtomRepeat) >>= regexRec
   , pure re
   ]
 
 -- | Parses a regex atom possibly followed by a repeater.
-regexAtomRepeat :: Parser RegexQ
+regexAtomRepeat :: Parser RegexAST
 regexAtomRepeat = do
   re <- regexAtom
   P.choice
-    [ symbol "?" $> reOpt re
-    , symbol "+" $> rePlus re
-    , symbol "*" $> reStar re
+    [ symbol "?" $> RE.opt re
+    , symbol "+" $> RE.plus re
+    , symbol "*" $> RE.star re
     , regexRepeatBraces re
     , pure re
     ]
 
 -- | Parses a repeat expression of the form @{n}@, @{n,}@, or @{n,m}@, where @n@ and @m@ are decimal
 -- numbers. Then applies the correct repeat to the provided regex.
-regexRepeatBraces :: RegexQ -> Parser RegexQ
+regexRepeatBraces :: RegexAST -> Parser RegexAST
 regexRepeatBraces re =
   P.between (symbol "{") (symbol "}") do
     n <- bound
     P.choice
       [ symbol "," >> P.choice
-          [ bound <&> \m -> reRepeatBounded n m re
-          , pure (reRepeatUnbounded n re)
+          [ bound <&> \m -> RE.repeatBounded n m re
+          , pure (RE.repeatUnbounded n re)
           ]
-      , pure (reRepeat n re)
+      , pure (RE.repeat n re)
       ]
   where
     bound :: Parser Natural
     bound = lexeme L.decimal
 
-regexAtom :: Parser RegexQ
+regexAtom :: Parser RegexAST
 regexAtom = P.choice
-  [ RECharSet <$> (charSetBrackets <|> charSetSplice)
-  , P.between (symbol "(") (symbol ")") regex
+  [ P.between (symbol "(") (symbol ")") regex
+  , regexCharSet
   , regexSplice
   , regexString
   , regexChar
   ]
 
-regexString :: Parser RegexQ
+regexCharSet :: Parser RegexAST
+regexCharSet = (charSetBrackets <|> charSetSplice) >>= \case
+  CS.Chars cs -> case RE.tryChars cs of
+    Just re -> pure re
+    Nothing -> fail "empty character set in regex will match nothing"
+  cs -> pure (RE.Chars cs)
+
+regexString :: Parser RegexAST
 regexString = do
   q <- P.char '\'' <|> P.char '"'
   s <- P.many (escapedChar <|> P.anySingleBut q)
   _ <- symbol [q]
-  pure (reString s)
+  pure (RE.string s)
 
-regexChar :: Parser RegexQ
+regexChar :: Parser RegexAST
 regexChar = lexeme $
-  reChar <$> P.choice
+  RE.char <$> P.choice
     [ escapedChar
     , P.noneOf "?+*|{}()"
     ]
 
-regexSplice :: Parser RegexQ
+regexSplice :: Parser RegexAST
 regexSplice = lexeme do
   _ <- P.char '%'
-  RESplice <$> spliceName
+  RE.Splice <$> spliceName
 
 --------------------
 -- CharSet Parser --
@@ -116,50 +126,50 @@ regexSplice = lexeme do
 --
 -- Essentially, we parse a charset as though we just saw a @[@, so we handle the possible @^@ which
 -- inverts it and then parse a non-empty list of charset atoms.
-charSet :: Parser CharSetQ
+charSet :: Parser CharSetAST
 charSet = whitespace >> P.choice
-  [ symbol "^" >> (csInverse <$> charSetInner)
+  [ symbol "^" >> (CS.complement <$> charSetInner)
   , charSetInner
   ]
 
 -- | Parse a charset after we've already checked for @^@.
-charSetInner :: Parser CharSetQ
+charSetInner :: Parser CharSetAST
 charSetInner = do
   cs <- charSetAtom
   charSetRec cs
 
 -- | Recursive case of the charset parser, where we pass in the prefix of the charset parsed so far
 -- and then either union or difference it with the rest of the charset.
-charSetRec :: CharSetQ -> Parser CharSetQ
+charSetRec :: CharSetAST -> Parser CharSetAST
 charSetRec cs = P.choice
-  [ CSDiff cs <$> (symbol "^" >> charSetInner)
-  , (csUnion cs <$> charSetAtom) >>= charSetRec
+  [ CS.difference cs <$> (symbol "^" >> charSetInner)
+  , (CS.union cs <$> charSetAtom) >>= charSetRec
   , pure cs
   ]
 
-charSetAtom :: Parser CharSetQ
+charSetAtom :: Parser CharSetAST
 charSetAtom = P.choice
   [ charSetBrackets
   , charSetSplice
   , singleCharOrRange
   ]
 
-charSetBrackets :: Parser CharSetQ
+charSetBrackets :: Parser CharSetAST
 charSetBrackets = P.between (symbol "[") (symbol "]") charSet
 
 -- | Parse a single character or character range in a charset.
-singleCharOrRange :: Parser CharSetQ
+singleCharOrRange :: Parser CharSetAST
 singleCharOrRange = do
   c <- singleChar
-  charSetRange c <|> pure (CSSingle c)
+  charSetRange c <|> pure (CS.char c)
 
-charSetRange :: Char -> Parser CharSetQ
+charSetRange :: Char -> Parser CharSetAST
 charSetRange c1 = do
   _ <- symbol "-"
   c2 <- singleChar
   case compare c1 c2 of
-    EQ -> pure (CSSingle c1)
-    LT -> pure (CSRange c1 c2)
+    EQ -> pure (CS.char c1)
+    LT -> pure (CS.range c1 c2)
     GT -> fail "empty character range"
 
 -- | Parse a single character (standalone, quoted, or escaped) in a charset.
@@ -178,10 +188,10 @@ quotedChar = do
   _ <- P.char q
   pure c
 
-charSetSplice :: Parser CharSetQ
+charSetSplice :: Parser CharSetAST
 charSetSplice = lexeme do
   _ <- P.char '$'
-  CSSplice <$> spliceName
+  CS.Splice <$> spliceName
 
 --------------------
 -- Helper Parsers --

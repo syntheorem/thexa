@@ -1,33 +1,37 @@
+{-# LANGUAGE StrictData #-}
 module Thexa.Regex.AST where
 
 import PreludePrime
 
 import Data.Foldable (foldl1, foldr1)
-import Data.List.NonEmpty (NonEmpty((:|)))
 import Data.String (IsString(fromString))
 
-type Regex = Regex_ Void
-type RegexQ = Regex_ String
+import Thexa.Regex.CharSet (CharSet)
+import Thexa.Regex.CharSet qualified as CS
+import Thexa.Regex.CharSet.AST (CharSetAST, IsCharSet(fromCharSet))
 
-data Regex_ s
+type Regex = RegexAST' CharSet Void
+type RegexAST = RegexAST' CharSetAST String
+
+data RegexAST' cs s
   -- | Matches a single character which matches the set.
-  = RECharSet (CharSet_ s)
+  = Chars cs
 
   -- | Matches strings which match either regex.
-  | REAlt (Regex_ s) (Regex_ s)
+  | Alt (RegexAST' cs s) (RegexAST' cs s)
 
   -- | Matches strings which match the first regex and then the second.
-  | RESeq (Regex_ s) (Regex_ s)
+  | Seq (RegexAST' cs s) (RegexAST' cs s)
 
   -- | Matches strings which match the regex @n@ or more times.
   --
   -- If the second argument is provided, the number of times it will match after the minimum is
   -- bounded by that argument. So given @n@ and @Just m@, this will match the regex between @n@ and
   -- @n + m@ times, inclusive.
-  | RERepeat (Regex_ s) Natural (Maybe Natural)
+  | Repeat (RegexAST' cs s) Natural (Maybe Natural)
 
   -- | Matches the empty string.
-  | REEmpty
+  | Empty
 
   -- | The name of a Haskell value that will be spliced in using Template Haskell.
   --
@@ -37,91 +41,80 @@ data Regex_ s
   -- splice. For fully evaluated regexes, the type should be 'Void' to indicate that there are no
   -- splices. Since this constructor is strict in its parameter, the type checker knows that it
   -- can't be used when the parameter is 'Void', so there is no need to pattern match on it.
-  | RESplice !s
+  | Splice !s
 
   deriving (Eq, Show)
 
-type CharSet = CharSet_ Void
-type CharSetQ = CharSet_ String
+instance Semigroup (RegexAST' cs s) where
+  (<>) = append
 
-data CharSet_ s
-  -- | Matches a specific character.
-  = CSSingle Char
+instance Monoid (RegexAST' cs s) where
+  mempty = Empty
 
-  -- | Matches any character with a code point between the given characters, inclusive.
-  | CSRange Char Char
+-- | Regex that matches the given string literal.
+instance IsCharSet cs => IsString (RegexAST' cs s) where
+  fromString = string
 
-  -- | Matches any character that matches either set.
-  | CSUnion (CharSet_ s) (CharSet_ s)
+char :: IsCharSet cs => Char -> RegexAST' cs s
+char = chars . CS.singleton
 
-  -- | Matches characters which match the first set but not the second.
-  | CSDiff (CharSet_ s) (CharSet_ s)
+-- | Regex that matches a set of characters.
+--
+-- Calls 'error' if the provided set is empty. Technically, an empty set is not invalid, but then
+-- the returned regex will never match anything, which is very likely not what the user intended.
+-- But because of splicing, we can't necessarily check that a char set is non-empty when we parse
+-- it. So we have the regex quasi-quoter use this smart constructor when wrapping a char set,
+-- causing an exception (with a backtrace) to be thrown when we try to compile the regex. It's not
+-- an ideal error reporting mechanism, but the alternatives are silently generating a regex that
+-- matches nothing or generating the error in the compiler, at which point we've lost context for
+-- where the offending char set originated.
+chars :: (Partial, IsCharSet cs) => CharSet -> RegexAST' cs s
+chars = fromMaybe (error "empty character set in regex will match nothing") . tryChars
 
-  -- | The name of a Haskell value that will be spliced in using Template Haskell.
-  --
-  -- See documentation for 'RESplice' for more information.
-  | CSSplice !s
+-- | Like 'chars', but returns 'Nothing' when the char set is empty.
+tryChars :: IsCharSet cs => CharSet -> Maybe (RegexAST' cs s)
+tryChars cs
+  | CS.null cs = Nothing
+  | otherwise  = Just (Chars (fromCharSet cs))
 
-  deriving (Eq, Show)
+charRange :: (Partial, IsCharSet cs) => Char -> Char -> RegexAST' cs s
+charRange l u = chars (CS.range l u)
 
-instance IsString (Regex_ s) where
-  fromString = reString
+string :: IsCharSet cs => String -> RegexAST' cs s
+string = concat . map char
 
-instance IsString (CharSet_ s) where
-  fromString []     = error "empty CharSet"
-  fromString (c:cs) = csUnionList (map CSSingle (c:|cs))
+append :: RegexAST' cs s -> RegexAST' cs s -> RegexAST' cs s
+append r1 (Seq r2 r3) = append (append r1 r2) r3
+append r1 r2          = Seq r1 r2
 
-reChar :: Char -> Regex_ s
-reChar = RECharSet . CSSingle
+concat :: [RegexAST' cs s] -> RegexAST' cs s
+concat [] = Empty
+concat rs = foldl1 append rs
 
-reString :: String -> Regex_ s
-reString = reSeqList . map reChar
+alt :: RegexAST' cs s -> RegexAST' cs s -> RegexAST' cs s
+alt (Alt r1 r2) r3 = alt r1 (alt r2 r3)
+alt r1          r2 = Alt r1 r2
 
-reSeq :: Regex_ s -> Regex_ s -> Regex_ s
-reSeq r1 (RESeq r2 r3) = reSeq (reSeq r1 r2) r3
-reSeq r1 r2            = RESeq r1 r2
+alts :: [RegexAST' cs s] -> RegexAST' cs s
+alts [] = Empty
+alts rs = foldr1 alt rs
 
-reSeqList :: [Regex_ s] -> Regex_ s
-reSeqList [] = REEmpty
-reSeqList rs = foldl1 reSeq rs
+plus :: RegexAST' cs s -> RegexAST' cs s
+plus = repeatUnbounded 1
 
-reAlt :: Regex_ s -> Regex_ s -> Regex_ s
-reAlt (REAlt r1 r2) r3 = reAlt r1 (reAlt r2 r3)
-reAlt r1            r2 = REAlt r1 r2
+star :: RegexAST' cs s -> RegexAST' cs s
+star = repeatUnbounded 0
 
-reAltList :: [Regex_ s] -> Regex_ s
-reAltList [] = REEmpty
-reAltList rs = foldr1 reAlt rs
+opt :: RegexAST' cs s -> RegexAST' cs s
+opt = repeatBounded 0 1
 
-rePlus :: Regex_ s -> Regex_ s
-rePlus = reRepeatUnbounded 1
+repeat :: Natural -> RegexAST' cs s -> RegexAST' cs s
+repeat n r = Repeat r n (Just 0)
 
-reStar :: Regex_ s -> Regex_ s
-reStar = reRepeatUnbounded 0
+repeatUnbounded :: Natural -> RegexAST' cs s -> RegexAST' cs s
+repeatUnbounded n r = Repeat r n Nothing
 
-reOpt :: Regex_ s -> Regex_ s
-reOpt = reRepeatBounded 0 1
-
-reRepeat :: Natural -> Regex_ s -> Regex_ s
-reRepeat n r = RERepeat r n (Just 0)
-
-reRepeatUnbounded :: Natural -> Regex_ s -> Regex_ s
-reRepeatUnbounded n r = RERepeat r n Nothing
-
-reRepeatBounded :: Natural -> Natural -> Regex_ s -> Regex_ s
-reRepeatBounded n m r
-  | m < n     = REEmpty
-  | otherwise = RERepeat r n (Just (m - n))
-
-csUniverse :: CharSet_ s
-csUniverse = CSRange minBound maxBound
-
-csInverse :: CharSet_ s -> CharSet_ s
-csInverse = CSDiff csUniverse
-
-csUnion :: CharSet_ s -> CharSet_ s -> CharSet_ s
-csUnion c1 (CSUnion c2 c3) = csUnion (csUnion c1 c2) c3
-csUnion c1 c2              = CSUnion c1 c2
-
-csUnionList :: NonEmpty (CharSet_ s) -> CharSet_ s
-csUnionList = foldl1 csUnion
+repeatBounded :: Natural -> Natural -> RegexAST' cs s -> RegexAST' cs s
+repeatBounded n m r
+  | m < n     = Empty
+  | otherwise = Repeat r n (Just (m - n))

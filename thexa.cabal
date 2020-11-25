@@ -14,6 +14,7 @@ common deps
     , mtl
     , prelude-prime
     , primitive
+    , template-haskell
 
 common lang
   default-language: Haskell2010
@@ -27,6 +28,7 @@ common lang
     DefaultSignatures
     DeriveAnyClass
     DeriveGeneric
+    DeriveLift
     DerivingStrategies
     DerivingVia
     DuplicateRecordFields
@@ -92,10 +94,12 @@ library
     Thexa.IntLike.Map
     Thexa.IntLike.Set
     Thexa.Regex.AST
+    Thexa.Regex.CharSet
+    Thexa.Regex.CharSet.AST
     Thexa.Regex.Compiler
     Thexa.Regex.Parser
-    Thexa.Regex.RangeSet
     Thexa.NFA
+    Thexa.TH
 
 test-suite spec
   import: deps, lang, exe-opts
@@ -105,8 +109,8 @@ test-suite spec
   hs-source-dirs: spec
   main-is: Spec.hs
   other-modules:
+    Thexa.Regex.CharSetSpec
     Thexa.Regex.ParserSpec
-    Thexa.Regex.RangeSetSpec
 
   build-depends:
       thexa

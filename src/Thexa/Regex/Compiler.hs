@@ -1,4 +1,6 @@
-module Thexa.Regex.Compiler where
+module Thexa.Regex.Compiler
+( compile
+) where
 
 import PreludePrime
 
@@ -7,14 +9,19 @@ import Data.Bits ((.&.), (.|.), shiftR, shiftL, complement, countTrailingZeros)
 import Data.Maybe (fromJust)
 
 import Thexa.IntLike.Map qualified as ILMap
-import Thexa.Regex.AST
-import Thexa.Regex.RangeSet (Range(..), RangeSet)
-import Thexa.Regex.RangeSet qualified as RS
+import Thexa.Regex.AST (Regex)
+import Thexa.Regex.AST qualified as RE
+import Thexa.Regex.CharSet (CharSet)
+import Thexa.Regex.CharSet qualified as CS
 import Thexa.NFA (NFA, ByteMap)
 import Thexa.NFA qualified as NFA
 
 compile :: [(Regex, NFA.MatchKey)] -> NFA
-compile = NFA.execBuild . traverse_ (\(re, k) -> buildRegexMatch re k)
+compile = NFA.execBuild . traverse_ (uncurry buildRegexMatch)
+
+-- | Return type of a function that recursively builds an NFA from a regex. Takes the starting node
+-- as input and returns the ending node after building the regex into the NFA.
+type BuildRegex = NFA.Node -> NFA.Build NFA.Node
 
 buildRegexMatch :: Regex -> NFA.MatchKey -> NFA.Build ()
 buildRegexMatch re k = do
@@ -22,17 +29,13 @@ buildRegexMatch re k = do
   matchNode <- NFA.newMatchNode k
   NFA.addEpsilonTransition end matchNode
 
--- | Return type of a function that recursively builds an NFA from a regex. Takes the starting node
--- as input and returns the ending node after building the regex into the NFA.
-type BuildRegex = NFA.Node -> NFA.Build NFA.Node
-
 buildRegex :: Regex -> BuildRegex
 buildRegex = \case
-  RECharSet cs    -> buildCharSetUtf8 cs
-  REAlt re1 re2   -> buildRegexAlt re1 re2
-  RESeq re1 re2   -> buildRegexSeq re1 re2
-  RERepeat re n m -> buildRegexRepeat re n m
-  REEmpty         -> \start -> pure start
+  RE.Chars cs      -> buildCharSetUtf8 cs
+  RE.Alt re1 re2   -> buildRegexAlt re1 re2
+  RE.Seq re1 re2   -> buildRegexSeq re1 re2
+  RE.Repeat re n m -> buildRegexRepeat re n m
+  RE.Empty         -> \start -> pure start
 
 buildRegexAlt :: Regex -> Regex -> BuildRegex
 buildRegexAlt re1 re2 start = do
@@ -88,13 +91,6 @@ buildRegexRepeatUpTo re n start
 
       go n start
 
-csToRanges :: CharSet -> RangeSet
-csToRanges = \case
-  CSSingle c       -> RS.singleton c
-  CSRange  l u     -> RS.range l u
-  CSUnion  cs1 cs2 -> RS.union (csToRanges cs1) (csToRanges cs2)
-  CSDiff   cs1 cs2 -> RS.difference (csToRanges cs1) (csToRanges cs2)
-
 {- UTF-8 encoding table
 +-------------------+------------------+-----------+-----------+-----------+----------+
 | First code point  | Last code point  |  Byte 1   |  Byte 2   |  Byte 3   |  Byte 4  |
@@ -134,30 +130,29 @@ csToRanges = \case
 -- DFA slower, it will just use more memory.
 buildCharSetUtf8 :: CharSet -> BuildRegex
 buildCharSetUtf8 cs start = do
-  let rs = csToRanges cs
   end <- NFA.newNode
 
   -- 1 byte chars
-  let (rs1b, rsGT1b) = RS.splitLE '\x7F' rs
-  let bm = ILMap.fromDistinctAscList [(fromIntegral (ord c), end) | c <- RS.toString rs1b]
+  let (cs1b, csGT1b) = CS.splitLE '\x7F' cs
+  let bm = ILMap.fromDistinctAscList [(fromIntegral (ord c), end) | c <- CS.toString cs1b]
   NFA.addTransitions start bm
 
   -- 2 byte chars
-  unless (RS.null rsGT1b) do
-    let (rs2b, rsGT2b) = RS.splitLE '\x07FF' rsGT1b
+  unless (CS.null csGT1b) do
+    let (cs2b, csGT2b) = CS.splitLE '\x07FF' csGT1b
     anyNext1 <- anyNextByte end
-    buildNByteChars 2 end start [anyNext1] rs2b
+    buildNByteChars 2 end start [anyNext1] cs2b
 
     -- 3 byte chars
-    unless (RS.null rsGT2b) do
-      let (rs3b, rs4b) = RS.splitLE '\xFFFF' rsGT2b
+    unless (CS.null csGT2b) do
+      let (cs3b, cs4b) = CS.splitLE '\xFFFF' csGT2b
       anyNext2 <- anyNextByte anyNext1
-      buildNByteChars 3 end start [anyNext2, anyNext1] rs3b
+      buildNByteChars 3 end start [anyNext2, anyNext1] cs3b
 
       -- 4 byte chars
-      unless (RS.null rs4b) do
+      unless (CS.null cs4b) do
         anyNext3 <- anyNextByte anyNext2
-        buildNByteChars 4 end start [anyNext3, anyNext2, anyNext1] rs4b
+        buildNByteChars 4 end start [anyNext3, anyNext2, anyNext1] cs4b
 
   pure end
 
@@ -177,7 +172,7 @@ buildNByteChars
   -> NFA.Node   -- ^ End node
   -> NFA.Node   -- ^ Start node
   -> [NFA.Node] -- ^ anyNextByte nodes (exactly @n - 1@ of them)
-  -> RangeSet   -- ^ Set of chars to accept
+  -> CharSet   -- ^ Set of chars to accept
   -> NFA.Build ()
 buildNByteChars n end = go 1
   where
@@ -185,23 +180,23 @@ buildNByteChars n end = go 1
     go _ _ [] _ = undefined
 
     -- Build nodes for the @i@th byte and (recursively) all subsequent bytes.
-    go i start (anyNext:anyNexts) rs = do
-      let grouped = groupByByte i rs
+    go i start (anyNext:anyNexts) cs = do
+      let grouped = groupByByte i cs
 
       -- Traverse the sets grouped by the @i@th byte, recursively mapping each to the node that will
       -- match the @i+1@th byte of that set.
-      byteTrans <- for grouped \rs' -> do
+      byteTrans <- for grouped \cs' -> do
 
         -- Get a char from the set so we can check the range of all chars with the same @i@th byte.
         -- We know the set is non-empty because groupByByte doesn't add entries for empty sets.
-        let c = fromJust (RS.findMin rs')
+        let c = fromJust (CS.findMin cs')
 
         -- This is a special case because the second byte of the largest Unicode character
         -- (@\x10FFFF@) is actually @0b10001111@ rather than @0b10111111@, so we can't use the
         -- normal anyNext node.
         let canDoAnyNext = c < '\x100000' || i > 1
 
-        if rs' == RS.range' (utf8Range i c) && canDoAnyNext
+        if cs' == uncurry CS.range (utf8Range i c) && canDoAnyNext
           then do
             -- In this case, we know that we can match any character with the bytes that we've
             -- matched so far. As an optimization, we use a preconstructed state which matches the
@@ -216,12 +211,12 @@ buildNByteChars n end = go 1
               then do
                 -- The base case: the next byte is the last byte we need to match, so we can
                 -- directly add transitions from the new node to the end node.
-                let byteEndPairs = [(utf8Byte (i+1) x, end) | x <- RS.toString rs']
+                let byteEndPairs = [(utf8Byte (i+1) x, end) | x <- CS.toString cs']
                 NFA.addTransitions node (ILMap.fromDistinctAscList byteEndPairs)
 
               else do
                 -- The recursive case: we have more than one byte left to match.
-                go (i+1) node anyNexts rs'
+                go (i+1) node anyNexts cs'
 
             pure node
 
@@ -230,18 +225,18 @@ buildNByteChars n end = go 1
 
 -- | Split up the set into sets of characters which have the same @n@th byte when UTF-8 encoded.
 -- Assumes that the first @n - 1@ bytes of all characters in the set are the same.
-groupByByte :: Int -> RangeSet -> ByteMap RangeSet
+groupByByte :: Int -> CharSet -> ByteMap CharSet
 groupByByte n = go ILMap.empty
   where
-    go bm rs = case RS.findMin rs of
+    go bm cs = case CS.findMin cs of
       Nothing -> bm
       Just c  -> go (ILMap.insert (utf8Byte n c) l bm) r
-        where (l, r)    = RS.splitLE u rs
-              Range _ u = utf8Range n c
+        where (l, r) = CS.splitLE u cs
+              (_, u) = utf8Range n c
 
 -- Range of characters with the same first @n@ bytes as @c@ when UTF-8 encoded.
-utf8Range :: Int -> Char -> Range
-utf8Range n c = Range (chr l) (chr u)
+utf8Range :: Int -> Char -> (Char, Char)
+utf8Range n c = (chr l, chr u)
   where
     i    = ord c
     l    = i .&. complement mask
