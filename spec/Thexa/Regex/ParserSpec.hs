@@ -73,6 +73,9 @@ spec = do
       specify "Unicode out-of-bounds" $
         shouldFailCS "\\u{110000}"
 
+      specify "Unicode empty" $
+        shouldFailCS "\\u{}"
+
     describe "ranges" do
       specify "basic" $
         "a-z" `shouldParseCS` CS.range 'a' 'z'

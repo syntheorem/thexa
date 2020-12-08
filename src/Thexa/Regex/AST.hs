@@ -1,4 +1,3 @@
-{-# LANGUAGE StrictData #-}
 module Thexa.Regex.AST where
 
 import PreludePrime
@@ -9,6 +8,7 @@ import Data.String (IsString(fromString))
 import Thexa.Regex.CharSet (CharSet)
 import Thexa.Regex.CharSet qualified as CS
 import Thexa.Regex.CharSet.AST (CharSetAST, IsCharSet(fromCharSet))
+import Thexa.Regex.CharSet.AST qualified as CS (fromAST)
 
 type Regex = RegexAST' CharSet Void
 type RegexAST = RegexAST' CharSetAST String
@@ -55,6 +55,17 @@ instance Monoid (RegexAST' cs s) where
 instance IsCharSet cs => IsString (RegexAST' cs s) where
   fromString = string
 
+-- | Attempt to convert a 'RegexAST' to a 'Regex'. This can only fail if the AST contains splices.
+fromAST :: RegexAST -> Maybe Regex
+fromAST = \case
+  Splice _      -> Nothing
+  Empty         -> Just Empty
+  Chars cs      -> Chars <$> CS.fromAST cs
+  Alt re1 re2   -> Alt <$> fromAST re1 <*> fromAST re2
+  Seq re1 re2   -> Seq <$> fromAST re1 <*> fromAST re2
+  Repeat re n m -> fromAST re <&> \re' -> Repeat re' n m
+
+-- | Regex that matches the given character.
 char :: IsCharSet cs => Char -> RegexAST' cs s
 char = chars . CS.singleton
 
@@ -77,43 +88,57 @@ tryChars cs
   | CS.null cs = Nothing
   | otherwise  = Just (Chars (fromCharSet cs))
 
+-- | Regex that matches the given range of characters.
+--
+-- Like 'chars', calls 'error' for an empty range.
 charRange :: (Partial, IsCharSet cs) => Char -> Char -> RegexAST' cs s
 charRange l u = chars (CS.range l u)
 
+-- | Regex that matches the given string exactly.
 string :: IsCharSet cs => String -> RegexAST' cs s
 string = concat . map char
 
+-- | Regex that matches its first argument and then its second.
 append :: RegexAST' cs s -> RegexAST' cs s -> RegexAST' cs s
 append r1 (Seq r2 r3) = append (append r1 r2) r3
 append r1 r2          = Seq r1 r2
 
+-- | 'append' a list of regexes in order.
 concat :: [RegexAST' cs s] -> RegexAST' cs s
 concat [] = Empty
 concat rs = foldl1 append rs
 
+-- | Regex that matches either of its two arguments.
 alt :: RegexAST' cs s -> RegexAST' cs s -> RegexAST' cs s
 alt (Alt r1 r2) r3 = alt r1 (alt r2 r3)
 alt r1          r2 = Alt r1 r2
 
+-- | 'alt' a list of regexes.
 alts :: [RegexAST' cs s] -> RegexAST' cs s
 alts [] = Empty
 alts rs = foldr1 alt rs
 
+-- | Regex that matches its argument one or more times.
 plus :: RegexAST' cs s -> RegexAST' cs s
 plus = repeatUnbounded 1
 
+-- | Regex that matches its argument zero or more times.
 star :: RegexAST' cs s -> RegexAST' cs s
 star = repeatUnbounded 0
 
+-- | Regex that matches its argument zero or one times.
 opt :: RegexAST' cs s -> RegexAST' cs s
 opt = repeatBounded 0 1
 
+-- | Regex that matches its argument exactly @n@ times.
 repeat :: Natural -> RegexAST' cs s -> RegexAST' cs s
 repeat n r = Repeat r n (Just 0)
 
+-- | Regex that matches its argument @n@ or more times.
 repeatUnbounded :: Natural -> RegexAST' cs s -> RegexAST' cs s
 repeatUnbounded n r = Repeat r n Nothing
 
+-- | Regex that matches its argument at least @n@ times and no more than @m@ times.
 repeatBounded :: Natural -> Natural -> RegexAST' cs s -> RegexAST' cs s
 repeatBounded n m r
   | m < n     = Empty

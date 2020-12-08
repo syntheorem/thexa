@@ -1,5 +1,4 @@
-{-# LANGUAGE NoOverloadedLists, NoOverloadedStrings #-}
-
+{-# LANGUAGE NoOverloadedStrings #-}
 module Thexa.Regex.Parser
 ( ParseErrors
 , parseRegex
@@ -283,7 +282,7 @@ xEscape = hexCode <|> controlCode
 -- | Parse a Unicode escape following a @\u@.
 uEscape :: Parser Char
 uEscape = P.between (symbol "{") (P.char '}') $ do
-  digits <- lexeme (P.many P.hexDigitChar)
+  digits <- lexeme (P.some P.hexDigitChar)
   let code = digitsToInt 16 digits
   unless (code <= 0x10FFFF) $
     fail "Unicode escape code is out of bounds (maximum is \\u{10FFFF})"

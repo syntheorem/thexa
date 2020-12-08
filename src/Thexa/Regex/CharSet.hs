@@ -9,7 +9,9 @@ module Thexa.Regex.CharSet
 
 -- * Queries
 , null
+, member
 , findMin
+, isSubsetOf
 
 -- * Insertion
 , insert
@@ -36,14 +38,17 @@ module Thexa.Regex.CharSet
 
 import PreludePrime hiding (empty, null, toList)
 
-import Control.Arrow (first)
 import Data.List (unfoldr)
 import Data.String (IsString(fromString))
 import Language.Haskell.TH.Syntax (Lift)
 import Text.Show (showsPrec)
 
 -- | A set of characters represented using an ordered list of non-overlapping ranges.
-data CharSet = Cons {-# UNPACK #-} !Char {-# UNPACK #-} !Char !CharSet | Nil
+data CharSet
+  = Nil
+  | Cons {-# UNPACK #-} !Char -- lower bound
+         {-# UNPACK #-} !Char -- upper bound
+         CharSet
   deriving (Eq, Ord, Lift)
 
 -- Invariants:
@@ -92,10 +97,18 @@ null :: CharSet -> Bool
 null Nil = True
 null _   = False
 
+-- | Is the given char contained in the set?
+member :: Char -> CharSet -> Bool
+member c cs = singleton c `isSubsetOf` cs
+
 -- | Lookup the smallest character in the set.
 findMin :: CharSet -> Maybe Char
 findMin Nil          = Nothing
 findMin (Cons c _ _) = Just c
+
+-- | Is the first set a subset of the second?
+isSubsetOf :: CharSet -> CharSet -> Bool
+isSubsetOf cs1 cs2 = null (difference cs1 cs2)
 
 -- | Insert a single character.
 insert :: Char -> CharSet -> CharSet
@@ -164,10 +177,14 @@ splitLE c cs
   | otherwise     = go cs
   where
     go Nil = (Nil, Nil)
-    go (Cons l u cs')
-      | u <= c    = first (Cons l u) (go cs')
-      | l <= c    = first (Cons l c) (go (Cons (succ c) u cs'))
-      | otherwise = (Nil, Cons l u cs')
+    go x@(Cons l u cs')
+      | u <= c    = mapFstLazy (Cons l u) (go cs')
+      | l <= c    = mapFstLazy (Cons l c) (go (Cons (succ c) u cs'))
+      | otherwise = (Nil, x)
+
+    -- We want to lazily match the result of the recursive call, see
+    -- https://stackoverflow.com/questions/42150614/why-is-the-lazy-pattern-match-version-of-splitat-function-faster
+    mapFstLazy f ~(a, b) = (f a, b)
 
 -- | Convert to an ordered list of characters in the set.
 toString :: CharSet -> String

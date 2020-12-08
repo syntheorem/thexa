@@ -56,19 +56,18 @@ buildRegexRepeat re n = \case
   Just m  -> buildRegexRepeatBounded re n m
   Nothing -> buildRegexRepeatUnbounded re n
 
-buildRegexRepeatUnbounded :: Regex -> Natural -> BuildRegex
-buildRegexRepeatUnbounded re n start
-  | n == 0    = pure start
-  | otherwise = do
-      end1 <- buildRegexRepeatExact re (n - 1) start
-      end2 <- buildRegex re end1
-      NFA.addEpsilonTransition end2 end1
-      pure end2
-
 buildRegexRepeatBounded :: Regex -> Natural -> Natural -> BuildRegex
 buildRegexRepeatBounded re n m start = do
   start' <- buildRegexRepeatExact re n start
   buildRegexRepeatUpTo re m start'
+
+buildRegexRepeatUnbounded :: Regex -> Natural -> BuildRegex
+buildRegexRepeatUnbounded re n start = do
+  end1 <- buildRegexRepeatExact re n start
+  end2 <- buildRegex re end1
+  NFA.addEpsilonTransition end2 end1
+  NFA.addEpsilonTransition end1 end2
+  pure end2
 
 buildRegexRepeatExact :: Regex -> Natural -> BuildRegex
 buildRegexRepeatExact re n start
@@ -78,18 +77,17 @@ buildRegexRepeatExact re n start
       buildRegexRepeatExact re (n - 1) start'
 
 buildRegexRepeatUpTo :: Regex -> Natural -> BuildRegex
-buildRegexRepeatUpTo re n start
-  | n == 0    = pure start
-  | otherwise = do
-      final <- NFA.newNode
+buildRegexRepeatUpTo re n start = do
+  final <- NFA.newNode
+  NFA.addEpsilonTransition start final
 
-      let go 0 _ = pure final
-          go n' start' = do
-            end <- buildRegex re start'
-            NFA.addEpsilonTransition end final
-            go (n' - 1) end
+  let go 0 _ = pure final
+      go n' start' = do
+        end <- buildRegex re start'
+        NFA.addEpsilonTransition end final
+        go (n' - 1) end
 
-      go n start
+  go n start
 
 {- UTF-8 encoding table
 +-------------------+------------------+-----------+-----------+-----------+----------+
@@ -118,7 +116,7 @@ buildRegexRepeatUpTo re n start
 -- To optimize cases like this with large contiguous ranges of characters, we preconstruct nodes to
 -- match all possible remaining bytes for 2, 3, and 4 byte characters, then these nodes are shared
 -- among all ranges of characters that we identify they can be used for. This allows us to match the
--- full range of Unicode characters with the optimal 5 nodes.
+-- full range of Unicode characters with the optimal 7 nodes.
 --
 -- It is still possible to construct cases that use a suboptimal number of states, but they would
 -- either take a large number of states anyway (e.g., a large set of non-contiguous characters) or
@@ -172,7 +170,7 @@ buildNByteChars
   -> NFA.Node   -- ^ End node
   -> NFA.Node   -- ^ Start node
   -> [NFA.Node] -- ^ anyNextByte nodes (exactly @n - 1@ of them)
-  -> CharSet   -- ^ Set of chars to accept
+  -> CharSet    -- ^ Set of chars to accept
   -> NFA.Build ()
 buildNByteChars n end = go 1
   where

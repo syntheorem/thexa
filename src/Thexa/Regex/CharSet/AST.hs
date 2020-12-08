@@ -1,4 +1,3 @@
-{-# LANGUAGE StrictData #-}
 module Thexa.Regex.CharSet.AST where
 
 import PreludePrime
@@ -46,6 +45,13 @@ instance IsCharSet CharSetAST where
 
 instance IsCharSet CharSet where
   fromCharSet = id
+
+fromAST :: CharSetAST -> Maybe CharSet
+fromAST = \case
+  Splice _      -> Nothing
+  Chars cs      -> Just cs
+  Union cs1 cs2 -> CS.union      <$> fromAST cs1 <*> fromAST cs2
+  Diff  cs1 cs2 -> CS.difference <$> fromAST cs1 <*> fromAST cs2
 
 char :: Char -> CharSetAST
 char = Chars . CS.singleton

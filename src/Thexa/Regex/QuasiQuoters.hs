@@ -1,4 +1,4 @@
-module Thexa.TH where
+module Thexa.Regex.QuasiQuoters where
 
 import PreludePrime
 

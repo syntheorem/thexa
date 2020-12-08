@@ -5,12 +5,14 @@ module Thexa.NFA
 
 -- * Type aliases
 , MatchKey
+, MatchSet
 , NodeSet
 , NodeMap
 , ByteMap
 
 -- * NFA accessors
 , startNode
+, nodeCount
 , matchNodes
 , transitions
 , byteTransitions
@@ -20,7 +22,6 @@ module Thexa.NFA
 , startNodes
 , step
 , stepAll
-, stepOnly
 , stepByte
 , epsilonClosure
 , matches
@@ -38,10 +39,11 @@ module Thexa.NFA
 
 import PreludePrime
 
-import Control.Monad.State.Strict (StateT(StateT), runStateT)
 import Control.Monad.ST (ST, runST)
 import Data.Primitive.Array
+import Data.Primitive.MutVar
 
+import Thexa.GrowArray qualified as GA
 import Thexa.IntLike.Class (IntLike)
 import Thexa.IntLike.Map qualified as ILMap
 import Thexa.IntLike.Set qualified as ILSet
@@ -81,9 +83,9 @@ data Transitions = Transitions
 
 -- | A key to identify which pattern was matched.
 --
--- Since we're compiling multiple regexes into a single NFA, we need a way to associate each match
--- node with the regex that it matches. To do this, we can simply give a distinct 'MatchKey' to each
--- regex and associate it with the relevant match node.
+-- Since we're compiling multiple regexes into a single automaton, we need a way to associate each
+-- match node with the regex that it matches. To do this, we can simply give a distinct 'MatchKey'
+-- to each regex and associate it with the relevant match node.
 type MatchKey = Int
 
 -- | A set of 'MatchKey's.
@@ -101,6 +103,10 @@ type ByteMap = ILMap.ILMap Word8
 -- | The start node that each NFA is initialized with.
 startNode :: Node
 startNode = Node 0
+
+-- | The number of nodes in the NFA.
+nodeCount :: NFA -> Int
+nodeCount = sizeofArray . nfaTransitions
 
 -- | The set of match nodes of an NFA and their associated 'MatchKey's.
 matchNodes :: NFA -> NodeMap MatchKey
@@ -133,10 +139,9 @@ startNodes nfa = epsilonClosure nfa (ILSet.singleton startNode)
 
 -- | Step the NFA simulation by feeding it the given byte.
 --
--- Returns the new set of nodes and the set of matches in the new state. Either set may be empty.
-step :: NFA -> Word8 -> NodeSet -> (NodeSet, MatchSet)
-step nfa byte nodes = (nodes', matches nfa nodes')
-  where nodes' = stepOnly nfa byte nodes
+-- Returns the new set of nodes, which may be empty to indicate a failure to match.
+step :: NFA -> NodeSet -> Word8 -> NodeSet
+step nfa nodes byte = epsilonClosure nfa (stepByte nfa nodes byte)
 
 -- | Step the NFA simulation for each possible input byte.
 --
@@ -147,19 +152,15 @@ stepAll nfa nodes = map (epsilonClosure nfa) byteStepped
     byteStepped = ILSet.foldl' f ILMap.empty nodes
     f bm n = ILMap.unionWith ILSet.union bm (byteMap (transitions nfa n))
 
--- | Step the NFA simulation but don't compute the match set.
-stepOnly :: NFA -> Word8 -> NodeSet -> NodeSet
-stepOnly nfa byte nodes = epsilonClosure nfa (stepByte nfa byte nodes)
-
 -- | Step the NFA simulation without following epsilon transitions.
-stepByte :: NFA -> Word8 -> NodeSet -> NodeSet
-stepByte nfa byte nodes = ILSet.foldl' f ILSet.empty nodes
+stepByte :: NFA -> NodeSet -> Word8 -> NodeSet
+stepByte nfa nodes byte = ILSet.foldl' f ILSet.empty nodes
   where f ns n = ILSet.union ns (byteTransitions nfa n byte)
 
 -- | Compute the epsilon closure of the given set of nodes.
 --
 -- The epsilon closure is the given set unioned with the set of all nodes that can be reached by
--- only following epsilon transitions.
+-- only following epsilon transitions from nodes in the original set.
 epsilonClosure :: NFA -> NodeSet -> NodeSet
 epsilonClosure nfa nodes = go nodes ILSet.empty
   where
@@ -181,27 +182,23 @@ matches nfa nodes = ILMap.foldl' (flip ILSet.insert) ILSet.empty matchMap
 ------------------
 
 -- | A monad in which we can efficiently build an NFA.
-newtype Build a = Build (forall s. StateT (BuildState s) (ST s) a)
+newtype Build a = Build (forall s. BuildState s -> ST s a)
 
 instance Functor Build where
-  fmap f (Build ma) = Build (fmap f ma)
+  fmap f (Build ma) = Build \bs -> fmap f (ma bs)
 
 instance Applicative Build where
-  pure a = Build (pure a)
-  Build mf <*> Build ma = Build (mf <*> ma)
+  pure a = Build \_ -> pure a
+  Build mf <*> Build ma = Build \bs -> mf bs <*> ma bs
 
 instance Monad Build where
-  Build ma >>= f = Build (ma >>= \a -> let Build mb = f a in mb)
-  Build ma >> Build mb = Build (ma >> mb)
+  Build ma >>= f = Build \bs -> ma bs >>= \a -> let Build mb = f a in mb bs
+  Build ma >> Build mb = Build \bs -> ma bs >> mb bs
 
-data BuildState s = BuildState
-  { bsNumNodes    :: {-# UNPACK #-} !Int
-  -- ^ Total number of nodes in the NFA so far.
-  , bsTransitions :: {-# UNPACK #-} !(MutableArray s Transitions)
-  -- ^ Array of node transitions. A node is represented by its index into this array. The size of
-  -- this array may be greater than 'bsNumNodes', in which case the leftover space is unused
-  -- capacity. We grow the array exponentially to provide amortized constant time appends.
-  , bsMatchNodes  :: !(NodeMap MatchKey)
+data BuildState s = BS
+  { bsTransitions :: {-# UNPACK #-} !(GA.GrowArray s Transitions)
+  -- ^ Array of node transitions. A node is represented by its index into this array.
+  , bsMatchNodes  :: {-# UNPACK #-} !(MutVar s (NodeMap MatchKey))
   -- ^ Set of nodes which represent a successful match in the NFA. Each match node is associated
   -- with an identifier which can be used to determine which pattern matched.
   }
@@ -210,22 +207,20 @@ data BuildState s = BuildState
 runBuild :: Build a -> (a, NFA)
 runBuild b = runST do
   -- Construct initial state and run the action after adding the start node
-  let Build m = newNode >> b
-  (a, bs) <- initBuildState >>= runStateT m
+  let Build ma = newNode >> b
+  bs <- initBuildState
+  a <- ma bs
 
-  -- We could unsafeFreezeArray here but then we'd be stuck with the extra capacity
-  arr <- freezeArray (bsTransitions bs) 0 (bsNumNodes bs)
-  pure (a, NFA{nfaTransitions = arr, nfaMatchNodes = bsMatchNodes bs})
+  -- Convert state to immutable NFA
+  arr <- GA.freeze (bsTransitions bs)
+  mNodes <- readMutVar (bsMatchNodes bs)
+  pure (a, NFA{nfaTransitions = arr, nfaMatchNodes = mNodes})
   where
     initBuildState :: ST s (BuildState s)
     initBuildState = do
-      -- Initial capacity is somewhat arbitrary
-      arr <- newTransitionArray 32
-      pure BuildState
-        { bsNumNodes = 0
-        , bsTransitions = arr
-        , bsMatchNodes = ILMap.empty
-        }
+      arr <- GA.new
+      var <- newMutVar ILMap.empty
+      pure BS{bsTransitions = arr, bsMatchNodes = var}
 
 -- | Like 'runBuild', but ignoring the result of the build action.
 execBuild :: Build () -> NFA
@@ -233,29 +228,16 @@ execBuild = snd . runBuild
 
 -- | Add a new node to the NFA. Initially has no transitions.
 newNode :: Build Node
-newNode = withBuildState \bs -> do
-  let BuildState{bsNumNodes = n, bsTransitions = arr} = bs
-  let cap = sizeofMutableArray arr
-
-  -- Allocate a new array if necessary
-  arr' <- if n == cap
-    then do
-      newArr <- newTransitionArray (cap * 2)
-      copyMutableArray newArr 0 arr 0 cap
-      pure newArr
-    else do
-      pure arr
-
-  -- Update state and return new index
-  writeArray arr' n $! Transitions ILSet.empty ILMap.empty
-  pure (Node n, bs { bsNumNodes = n + 1, bsTransitions = arr' })
+newNode = Build \BS{bsTransitions = arr} -> do
+  n <- GA.length arr
+  GA.push arr $! Transitions ILSet.empty ILMap.empty
+  pure (Node n)
 
 -- | Add a new match node to the NFA and associate it with the given MatchKey.
 newMatchNode :: MatchKey -> Build Node
 newMatchNode k = do
   n <- newNode
-  modifyBuildState \bs ->
-    bs { bsMatchNodes = ILMap.insert n k (bsMatchNodes bs) }
+  Build \bs -> modifyMutVar' (bsMatchNodes bs) (ILMap.insert n k)
   pure n
 
 -- | Add a transition from the first node to the second, labeled with the given byte.
@@ -280,24 +262,6 @@ addEpsilonTransition from to = modifyTransitions from \ts ->
 ----------------------------
 
 modifyTransitions :: Node -> (Transitions -> Transitions) -> Build ()
-modifyTransitions (Node from) f = withBuildState \bs -> do
-  let BuildState{bsNumNodes = n, bsTransitions = arr} = bs
-
-  when (from < 0 || from >= n) $
-    errorM ("adding transition from invalid node ("<>show (Node from)<>")")
-
-  t <- readArray arr from
-  writeArray arr from $! f t
-  pure ((), bs)
+modifyTransitions (Node from) f = Build \bs -> do
+  GA.modify' (bsTransitions bs) from f
 {-# INLINE modifyTransitions #-}
-
-withBuildState :: (forall s. BuildState s -> ST s (a, BuildState s)) -> Build a
-withBuildState f = Build (StateT f)
-{-# INLINE withBuildState #-}
-
-modifyBuildState :: (forall s. BuildState s -> BuildState s) -> Build ()
-modifyBuildState f = withBuildState \bs -> pure ((), f bs)
-{-# INLINE modifyBuildState #-}
-
-newTransitionArray :: Int -> ST s (MutableArray s Transitions)
-newTransitionArray capacity = newArray capacity (error "invalid NFA state")

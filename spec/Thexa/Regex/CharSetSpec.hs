@@ -29,7 +29,7 @@ validRangeSet set = case CS.toList set of
   ((l, u) : rs) -> l <= u && go u rs
   where
     go _ [] = True
-    go b ((l, u) : rs) = and @[]
+    go b ((l, u) : rs) = and
       [ b < maxBound
       , succ b < l
       , l <= u
@@ -77,10 +77,10 @@ spec = do
         `shouldBe` CS.unsafeFromList [('a', 'z')]
 
     specify "complex" $
-      foldMap @[] CS.unsafeFromList [ [('6', '9'), ('a', 'c')]
-                                    , [('0', '5')]
-                                    , [('1', '3'), ('a', 'd'), ('A', 'Z')]
-                                    ]
+      foldMap CS.unsafeFromList [ [('6', '9'), ('a', 'c')]
+                                , [('0', '5')]
+                                , [('1', '3'), ('a', 'd'), ('A', 'Z')]
+                                ]
         `shouldBe` CS.unsafeFromList [('0', '9'), ('a', 'd'), ('A', 'Z')]
 
     prop "union full x == full" $
