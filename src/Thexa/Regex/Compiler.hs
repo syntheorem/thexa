@@ -25,7 +25,13 @@ type BuildRegex = NFA.Node -> NFA.Build NFA.Node
 
 buildRegexMatch :: Regex -> NFA.MatchKey -> NFA.Build ()
 buildRegexMatch re k = do
-  end <- buildRegex re NFA.startNode
+  -- Need a separate start node for each regex to ensure that once we've consumed any input, there's
+  -- no way to go back and start matching a different regex from the beginning, which can happen if
+  -- we don't do this and a regex returns to its own start node.
+  start <- NFA.newNode
+  NFA.addEpsilonTransition NFA.startNode start
+
+  end <- buildRegex re start
   matchNode <- NFA.newMatchNode k
   NFA.addEpsilonTransition end matchNode
 
@@ -118,13 +124,13 @@ buildRegexRepeatUpTo re n start = do
 -- among all ranges of characters that we identify they can be used for. This allows us to match the
 -- full range of Unicode characters with the optimal 7 nodes.
 --
--- It is still possible to construct cases that use a suboptimal number of states, but they would
--- either take a large number of states anyway (e.g., a large set of non-contiguous characters) or
+-- It is still possible to construct cases that use a suboptimal number of nodes, but they would
+-- either take a large number of nodes anyway (e.g., a large set of non-contiguous characters) or
 -- are very contrived (e.g., all characters with even code points).
 --
 -- We could guarantee the optimal number of nodes by deduplicating nodes with the exact same
 -- transitions (using a data structure like @Map (ByteMap Node) Node@), but this could also
--- potentially be very expensive. And note that these extra states won't necessarily make the final
+-- potentially be very expensive. And note that these extra nodes won't necessarily make the final
 -- DFA slower, it will just use more memory.
 buildCharSetUtf8 :: CharSet -> BuildRegex
 buildCharSetUtf8 cs start = do
@@ -199,6 +205,11 @@ buildNByteChars n end = go 1
             -- In this case, we know that we can match any character with the bytes that we've
             -- matched so far. As an optimization, we use a preconstructed state which matches the
             -- next @n - i@ bytes, which is shared by all ranges that reach this case.
+            --
+            -- Note that we require the anyNext nodes to be pre-built even though we don't know if
+            -- we'll be able to use them, because building them on-demand while still properly
+            -- sharing them would make this function even more complex. And if we don't use them,
+            -- they won't appear in the final DFA since they'll be unreachable from the start node.
             pure anyNext
 
           else do
@@ -232,7 +243,7 @@ groupByByte n = go ILMap.empty
         where (l, r) = CS.splitLE u cs
               (_, u) = utf8Range n c
 
--- Range of characters with the same first @n@ bytes as @c@ when UTF-8 encoded.
+-- | Range of characters with the same first @n@ bytes as @c@ when UTF-8 encoded.
 utf8Range :: Int -> Char -> (Char, Char)
 utf8Range n c = (chr l, chr u)
   where

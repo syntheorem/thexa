@@ -11,33 +11,47 @@ import Thexa.IntLike.Set qualified as ILSet
 
 import Thexa.DFA (DFA)
 import Thexa.DFA qualified as DFA
-import Thexa.NFA (NFA, MatchSet)
+import Thexa.NFA (NFA, MatchKey, MatchSet)
 import Thexa.NFA qualified as NFA
 import Thexa.Regex (Regex, CharSet, re)
 import Thexa.Regex qualified as RE
 import Thexa.Regex.AST qualified as RE
 import Thexa.Regex.CharSet qualified as CS
-import Thexa.Regex.Parser (parseRegex, parseErrorsPretty)
+import Thexa.Regex.Compiler qualified as RE
+import Thexa.Regex.Parser qualified as RE
 
--- We want to run every test against both the dense and sparse versions of the DFA so that we test
--- both representations. Although this would be sufficient for establishing correctness, we also
--- test against the NFA directly to aid in debugging, since if the NFA fails then we can rule out
--- the NFA->DFA conversion as being the source of the bug.
+-- We want to run every test against all possible representations of the DFA. Although this would be
+-- sufficient for establishing correctness, we also test against the NFA directly to aid in
+-- debugging, since if the NFA fails then we can rule out the NFA->DFA conversion as being the
+-- source of the bug.
 --
--- To do this, we use this type to hold all three forms of the compiled regex.
+-- To do this, we use this type to hold all forms of the compiled regex.
 data CompiledRegex = CR
   { nfa :: NFA
   , dense :: DFA
+  , offset :: DFA
   , sparse :: DFA
   }
 
 -- Compile a single regex.
 compile1 :: Regex -> CompiledRegex
-compile1 regex = CR {..}
+compile1 regex = compile [(regex, 0)]
+
+compile :: [(Regex, MatchKey)] -> CompiledRegex
+compile regexes = CR {..}
   where
-    nfa = RE.compile [(regex, 0)]
+    nfa = RE.compile regexes
     dense = DFA.denseFromNFA nfa
+    offset = DFA.offsetFromNFA nfa
     sparse = DFA.sparseFromNFA nfa
+
+-- Parse a regex. Throw an exception on failure or if the regex contains splices.
+parse :: String -> Regex
+parse r = case RE.parseRegex r of
+  Left errs  -> error (RE.parseErrorsPretty errs)
+  Right rAST -> case RE.fromAST rAST of
+    Just r' -> r'
+    Nothing -> error "regex contains splices"
 
 -- Find the longest match on the given list of bytes for the NFA, returning the set of match keys
 -- and the remaining unmatched bytes.
@@ -146,6 +160,13 @@ spec = modifyMaxSuccess (max 1000) do
     ["\xFF\&a\xFFFF\&b"]
     ["", "\xFF", "\xFF\&a", "a", "\xFFFF", "ba\xFFFF", "a\xFFFF\&b"]
 
+  describeRegexes "multiple regexes"
+    [ ("a+"   , ["a", "aa"])
+    , ("a*b+" , ["b", "bbb", "ab", "aaabb"])
+    , ("ab?c" , ["abc", "ac"])
+    , (""     , [""])
+    ]
+
 -- Test a regex matching only the given character.
 specifyChar :: HasCallStack => Char -> Spec
 specifyChar c = describe (show c) do
@@ -184,11 +205,19 @@ describeRegex r matchStrs noMatchStrs = describe desc do
       cr `shouldNotMatchC` UTF8.encode str
   where
     desc = if r == "" then "\"\"" else r
-    cr = case parseRegex r of
-      Left errs  -> error (parseErrorsPretty errs)
-      Right rAST -> case RE.fromAST rAST of
-        Just r' -> compile1 r'
-        Nothing -> error "regex contains splices"
+    cr = compile1 (parse r)
+
+-- Test multiple regexes compiled together against a list of strings that each one should match.
+describeRegexes :: HasCallStack => String -> [(String, [String])] -> Spec
+describeRegexes name rs = describe name do
+  for_ irs \(desc, matchStrs, key) -> do
+    describe desc do
+      for_ matchStrs \str -> do
+        it ("matches "<>show str) $
+          cr `shouldMatchKeyC` (key, UTF8.encode str)
+  where
+    cr = compile [(parse r, i) | (r, _) <- rs | i <- [0..]]
+    irs = [(if r == "" then "\"\"" else r, matchStrs, i) | (r, matchStrs) <- rs | i <- [0..]]
 
 -- The Arbitrary instance for Char is... less arbitrary than I would like. Basically it only
 -- generates a subset of code points and is heavily biased towards ASCII characters. For my use
@@ -219,13 +248,10 @@ shouldMatchC = shouldMatchWith expectExactMatch
 shouldNotMatchC :: HasCallStack => CompiledRegex -> [Word8] -> Expectation
 shouldNotMatchC = shouldMatchWith expectNoExactMatch
 
-propMatch :: CompiledRegex -> [Word8] -> Property
-propMatch = propMatchWith expectExactMatch
+shouldMatchKeyC :: HasCallStack => CompiledRegex -> (MatchKey, [Word8]) -> Expectation
+shouldMatchKeyC cr (key, bs) = shouldMatchWith (expectMatchKey key) cr bs
 
-propNoMatch :: CompiledRegex -> [Word8] -> Property
-propNoMatch = propMatchWith expectNoExactMatch
-
--- Tests all three forms of the compiled regex at once. The provided function receives the result of
+-- Tests all forms of the compiled regex at once. The provided function receives the result of
 -- matching the given bytes, and should return an error message or Nothing on success.
 shouldMatchWith :: HasCallStack
   => (Maybe (MatchSet, [Word8]) -> Maybe String)
@@ -233,8 +259,15 @@ shouldMatchWith :: HasCallStack
 shouldMatchWith f cr bs
   | Just err <- f (matchBytesNFA (nfa    cr) bs) = expectationFailure ("NFA failed: "<>err)
   | Just err <- f (matchBytesDFA (dense  cr) bs) = expectationFailure ("DenseDFA failed: "<>err)
+  | Just err <- f (matchBytesDFA (offset cr) bs) = expectationFailure ("OffsetDFA failed: "<>err)
   | Just err <- f (matchBytesDFA (sparse cr) bs) = expectationFailure ("SparseDFA failed: "<>err)
   | otherwise = pure ()
+
+propMatch :: CompiledRegex -> [Word8] -> Property
+propMatch = propMatchWith expectExactMatch
+
+propNoMatch :: CompiledRegex -> [Word8] -> Property
+propNoMatch = propMatchWith expectNoExactMatch
 
 -- Like shouldMatchWith, but in a QuickCheck context.
 propMatchWith :: ()
@@ -244,6 +277,7 @@ propMatchWith f cr bs = conjoin
   [ counterexample "NFA"       $ go (matchBytesNFA (nfa    cr) bs)
   , counterexample "DenseDFA"  $ go (matchBytesDFA (dense  cr) bs)
   , counterexample "SparseDFA" $ go (matchBytesDFA (sparse cr) bs)
+  , counterexample "OffsetDFA" $ go (matchBytesDFA (offset cr) bs)
   ]
   where
     go result = case f result of
@@ -252,12 +286,21 @@ propMatchWith f cr bs = conjoin
 
 expectExactMatch :: Maybe (MatchSet, [Word8]) -> Maybe String
 expectExactMatch = \case
-  Nothing      -> Just "no matches found"
   Just (_, []) -> Nothing
   Just (_, bs) -> Just ("matched with remaining bytes: "<>show bs)
+  Nothing      -> Just "no matches found"
 
 expectNoExactMatch :: Maybe (MatchSet, [Word8]) -> Maybe String
 expectNoExactMatch = \case
   Just (_, []) -> Just "matched entire string"
   _            -> Nothing
 
+expectMatchKey :: MatchKey -> Maybe (MatchSet, [Word8]) -> Maybe String
+expectMatchKey key = \case
+  Just (ms, [])
+    | ms == keySing -> Nothing
+    | otherwise     -> Just ("expected match keys "<>show keySing<>", got "<>show ms)
+  Just (_, bs)      -> Just ("matched with remaining bytes: "<>show bs)
+  Nothing           -> Just "no matches found"
+  where
+    keySing = ILSet.singleton key

@@ -61,9 +61,6 @@ spec = do
       specify "ASCII numeric" $
         "\\x21 \\x30" `shouldParseCS` "!0"
 
-      specify "ASCII numeric out-of-bounds" $
-        shouldFailCS "\\x80"
-
       specify "ASCII control codes" $
         "\\x{SOH}\\x{DEL}\\x{SO}\\x{NUL}" `shouldParseCS` "\SOH\DEL\SO\0"
 

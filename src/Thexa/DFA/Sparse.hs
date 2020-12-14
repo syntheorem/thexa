@@ -10,30 +10,29 @@ import PreludePrime
 
 import Data.Primitive.Array
 import Data.Primitive.Types (Prim)
-import Language.Haskell.TH.Syntax (Lift(liftTyped))
+import Language.Haskell.TH.Syntax (Lift)
 
 import Thexa.DFA.Types
 import Thexa.IntLike.Map qualified as ILMap
+import Thexa.Orphans ()
 import Thexa.PrimMap (PrimMap)
 import Thexa.PrimMap qualified as PrimMap
 
 newtype DFA ix = DFA (Array (Entry ix))
+  deriving (Lift)
   deriving newtype (NFData)
 
 data Entry ix = Entry
   { matchSet :: !MatchSet
   , transitions :: {-# UNPACK #-} !(PrimMap Word8 ix)
   }
-  deriving (Lift, Generic, NFData)
+  deriving (Lift)
 
-instance (Lift ix, Prim ix) => Lift (DFA ix) where
-  liftTyped (DFA arr) = [|| DFA (arrayFromListN n es) ||]
-    where
-      n = sizeofArray arr
-      es = toList arr
+instance NFData (Entry ix) where
+  rnf entry = entry `seq` ()
 
 fromSimple :: (Prim ix, Integral ix) => SimpleDFA -> DFA ix
-fromSimple arr = DFA $ flip map arr \(ms, bm) -> Entry
+fromSimple arr = DFA $ flip mapArray' arr \(ms, bm) -> Entry
   { matchSet = ms
   , transitions = ILMap.toList bm
                 & map (\(b, Node x) -> (b, fromIntegral x))

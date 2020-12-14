@@ -237,8 +237,6 @@ xEscape = hexCode <|> controlCode
     hexCode = do
       digits <- P.count 2 P.hexDigitChar
       let code = digitsToInt 16 digits
-      unless (code <= 127) $
-        fail "ASCII escape code is out of bounds (maximum is \\x7F)"
       pure (Char.chr (fromIntegral code))
 
     -- Note that we don't consume whitespace after the '}'

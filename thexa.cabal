@@ -8,7 +8,6 @@ build-type:     Simple
 common deps
   build-depends:
       base >=4.8 && <5
-    , bytestring
     , containers
     , hashable
     , hashtables
@@ -17,7 +16,6 @@ common deps
     , prelude-prime
     , primitive
     , template-haskell
-    , utf8-string
 
 common lang
   default-language: Haskell2010
@@ -54,6 +52,7 @@ common lang
     NoStarIsType
     OverloadedLabels
     OverloadedStrings
+    ParallelListComp
     PartialTypeSignatures
     PatternSynonyms
     PolyKinds
@@ -96,12 +95,16 @@ library
     Thexa.DFA
     Thexa.DFA.Dense
     Thexa.DFA.Sparse
+    Thexa.DFA.Offset
     Thexa.DFA.Types
     Thexa.GrowArray
     Thexa.IntLike.Class
     Thexa.IntLike.Map
     Thexa.IntLike.Set
+    Thexa.Lexer.Core
+    Thexa.Lexer.TH
     Thexa.NFA
+    Thexa.Orphans
     Thexa.PrimMap
     Thexa.Regex
     Thexa.Regex.AST
@@ -129,6 +132,7 @@ test-suite spec
     , hspec
     , hspec-megaparsec
     , QuickCheck
+    , utf8-string
 
 benchmark bench
   import: deps, lang, exe-opts

@@ -3,8 +3,9 @@ module Thexa.DFA
 , Node
 , MatchKey
 , MatchSet
-, sparseFromNFA
 , denseFromNFA
+, offsetFromNFA
+, sparseFromNFA
 , startNode
 , step
 , matches
@@ -30,11 +31,8 @@ import Thexa.NFA qualified as NFA
 
 import Thexa.DFA.Types
 import Thexa.DFA.Dense qualified as Dense
+import Thexa.DFA.Offset qualified as Offset
 import Thexa.DFA.Sparse qualified as Sparse
-
--- sparse saves space over dense at <154 entries
---
--- for dynamic sparseness, need avg entries per node <144
 
 -- | Deterministic Finite Automaton with byte-labeled transitions.
 --
@@ -55,29 +53,23 @@ import Thexa.DFA.Sparse qualified as Sparse
 -- transitions for a node. This is somewhat slower but can potentially save a lot of memory,
 -- although how much memory depends on the specific DFA.
 --
--- There is another optimization which is performed for both DFA representations. We probably don't
+-- TODO: describe offset representation
+--
+-- There is another optimization which is performed for all DFA representations. We probably don't
 -- need the full range of an @Int@ to represent the nodes, so we save space by using an @Int16@ or
 -- @Int32@, depending on the number of nodes in the DFA. There are no @Int8@ variants because at
 -- that point the DFA is very small anyway, and no @Int64@ variants because at that point the DFA is
--- too large to reasonably fit into memory anyway.
+-- too large to reasonably fit into memory.
 data DFA
   = Dense16 !(Dense.DFA Word16)
   | Dense32 !(Dense.DFA Word32)
+  | Offset16 !(Offset.DFA Word16)
+  | Offset32 !(Offset.DFA Word32)
   | Sparse16 !(Sparse.DFA Word16)
   | Sparse32 !(Sparse.DFA Word32)
   deriving (Lift, Generic, NFData)
 
--- | Construct a sparse DFA from an NFA.
-sparseFromNFA :: NFA -> DFA
-sparseFromNFA nfa
-  | n <= maxNodes16 = Sparse16 (Sparse.fromSimple simple)
-  | n <= maxNodes32 = Sparse32 (Sparse.fromSimple simple)
-  | otherwise       = error "too many nodes to fit in memory"
-  where
-    n = sizeofArray simple
-    simple = simpleFromNFA nfa
-
--- | Construct a dense DFA from an NFA.
+-- | Construct a DFA from an NFA using the dense representation.
 denseFromNFA :: NFA -> DFA
 denseFromNFA nfa
   -- We need strictly less than because the dense DFA
@@ -85,6 +77,28 @@ denseFromNFA nfa
   | n < maxNodes16 = Dense16 (Dense.fromSimple simple)
   | n < maxNodes32 = Dense32 (Dense.fromSimple simple)
   | otherwise      = error "too many nodes to fit in memory"
+  where
+    n = sizeofArray simple
+    simple = simpleFromNFA nfa
+
+-- | Construct a DFA from an NFA using the offset representation.
+offsetFromNFA :: NFA -> DFA
+offsetFromNFA nfa
+  -- We need strictly less than because the offset DFA
+  -- uses an extra index to represent invalid transitions.
+  | n < maxNodes16 = Offset16 (Offset.fromSimple simple)
+  | n < maxNodes32 = Offset32 (Offset.fromSimple simple)
+  | otherwise      = error "too many nodes to fit in memory"
+  where
+    n = sizeofArray simple
+    simple = simpleFromNFA nfa
+
+-- | Construct a DFA from an NFA using the sparse representation.
+sparseFromNFA :: NFA -> DFA
+sparseFromNFA nfa
+  | n <= maxNodes16 = Sparse16 (Sparse.fromSimple simple)
+  | n <= maxNodes32 = Sparse32 (Sparse.fromSimple simple)
+  | otherwise       = error "too many nodes to fit in memory"
   where
     n = sizeofArray simple
     simple = simpleFromNFA nfa
@@ -100,6 +114,8 @@ step :: DFA -> Node -> Word8 -> Maybe Node
 step = \case
   Dense16  dfa -> Dense.step  dfa
   Dense32  dfa -> Dense.step  dfa
+  Offset16 dfa -> Offset.step dfa
+  Offset32 dfa -> Offset.step dfa
   Sparse16 dfa -> Sparse.step dfa
   Sparse32 dfa -> Sparse.step dfa
 {-# INLINE step #-}
@@ -110,6 +126,8 @@ matches :: DFA -> Node -> MatchSet
 matches = \case
   Dense16  dfa -> Dense.matches  dfa
   Dense32  dfa -> Dense.matches  dfa
+  Offset16 dfa -> Offset.matches dfa
+  Offset32 dfa -> Offset.matches dfa
   Sparse16 dfa -> Sparse.matches dfa
   Sparse32 dfa -> Sparse.matches dfa
 {-# INLINE matches #-}
@@ -129,91 +147,6 @@ maxNodes32 = maxNodes @Word32
 -- Basically, the point is that it will work regardless of the number of bits in an @Int@.
 maxNodes :: forall a. Integral a => Int
 maxNodes = fromIntegral (fromIntegral (maxBound @Int) :: a)
-
------------
--- Stats --
------------
-
--- | Pretty-print a human-readable description of the DFA structure for debugging purposes.
-prettyPrint :: DFA -> String
-prettyPrint = foldMap ppNode . zip [0..] . toList . toSimple
-  where
-    ppNode :: (Int, (MatchSet, ByteMap Node)) -> String
-    ppNode (i, (ms, ts))
-      | ILSet.null ms = prefix <> transStr
-      | otherwise     = prefix <> matchStr <> transStr
-      where
-        prefix = show i
-        matchStr = "\t: MatchSet    " <> show (ILSet.toList ms) <> "\n"
-        transStr = "\t: Transitions " <> show (map ppTrans (ILMap.toList ts)) <> "\n"
-
-    ppTrans :: (Word8, Node) -> String
-    ppTrans (b, Node i) = "0x"<>pad<>bHex<>" => "<>show i
-      where
-        pad  = if length bHex < 2 then "0" else ""
-        bHex = showHex b ""
-
-toSimple :: DFA -> SimpleDFA
-toSimple = \case
-  Dense16  dfa -> Dense.toSimple  dfa
-  Dense32  dfa -> Dense.toSimple  dfa
-  Sparse16 dfa -> Sparse.toSimple dfa
-  Sparse32 dfa -> Sparse.toSimple dfa
-
-data Stats = Stats
-  { statNodeCount :: Int
-  -- ^ Number of nodes in the DFA.
-  , statBytesPerNodeIndexSparse :: Int
-  -- ^ Number of bytes used to represent a node in the sparse representation.
-  , statBytesPerNodeIndexDense :: Int
-  -- ^
-  , statAvgTransitionsPerNode :: Double
-  , statMatchNodeCount :: Int
-  , statAvgMatchesPerMatchNode :: Double
-  , statSizeOfSparse :: Int
-  , statSizeOfDense :: Int
-  }
-
-computeStats :: SimpleDFA -> Stats
-computeStats dfa = Stats
-  { statNodeCount = n
-  , statBytesPerNodeIndexSparse = sparseIxBytes
-  , statBytesPerNodeIndexDense = denseIxBytes
-  , statAvgTransitionsPerNode = avg (map ILMap.size transitions)
-  , statMatchNodeCount = length matches
-  , statAvgMatchesPerMatchNode = avg (map ILSet.size matches)
-  , statSizeOfSparse = sparseSize
-  , statSizeOfDense = denseSize
-  }
-  where
-    n = sizeofArray dfa
-    sparseIxBytes
-      | n <= maxNodes16 = 2
-      | n <= maxNodes32 = 4
-      | otherwise       = error "too many nodes to fit in memory"
-    denseIxBytes
-      | n < maxNodes16 = 2
-      | n < maxNodes32 = 4
-      | otherwise      = error "too many nodes to fit in memory"
-
-    matches = filter (not . ILSet.null) $ map fst $ toList dfa
-    transitions = map snd $ toList dfa
-
-    avg :: Real a => [a] -> Double
-    avg [] = 0
-    avg as = foldl' (\s a -> s + realToFrac a) 0 as / realToFrac (length as)
-
-    -- TODO: calculate size via compact regions?
-    ptrSize = sizeOf (undefined :: Ptr Int)
-    denseSize = n * denseIxBytes * 256 -- node array contents
-              + 2 * ptrSize -- node array overhead
-              + n * ptrSize -- match array contents
-              + 2 * ptrSize -- match array overhead (excluding card table)
-              + 2 * ptrSize -- pointers to the arrays
-    sparseSize = n * 3 * ptrSize -- per-node overhead (ptrs to match set and PrimMap arrays)
-               + n * 4 * ptrSize -- array overhead for transition PrimMaps
-               + (1 + sparseIxBytes) * sum (map ILMap.size transitions) -- transition map contents
-               + 2 * ptrSize -- array overhead (excluding card table)
 
 ------------------------
 -- Building SimpleDFA --
@@ -279,3 +212,90 @@ lookupNode nodes = do
       n <- Node <$> GA.length arr
       GA.push arr (Left nodes)
       pure (Just n, n)
+
+---------------
+-- Debugging --
+---------------
+
+-- | Pretty-print a human-readable description of the DFA structure for debugging purposes.
+prettyPrint :: DFA -> String
+prettyPrint = foldMap ppNode . zip [0..] . toList . toSimple
+  where
+    ppNode :: (Int, (MatchSet, ByteMap Node)) -> String
+    ppNode (i, (ms, ts))
+      | ILSet.null ms = prefix <> transStr
+      | otherwise     = prefix <> matchStr <> transStr
+      where
+        prefix = show i
+        matchStr = "\t: MatchSet    " <> show (ILSet.toList ms) <> "\n"
+        transStr = "\t: Transitions " <> show (map ppTrans (ILMap.toList ts)) <> "\n"
+
+    ppTrans :: (Word8, Node) -> String
+    ppTrans (b, Node i) = "0x"<>pad<>bHex<>" => "<>show i
+      where
+        pad  = if length bHex < 2 then "0" else ""
+        bHex = showHex b ""
+
+toSimple :: DFA -> SimpleDFA
+toSimple = \case
+  Dense16  dfa -> Dense.toSimple  dfa
+  Dense32  dfa -> Dense.toSimple  dfa
+  Offset16 dfa -> Offset.toSimple dfa
+  Offset32 dfa -> Offset.toSimple dfa
+  Sparse16 dfa -> Sparse.toSimple dfa
+  Sparse32 dfa -> Sparse.toSimple dfa
+
+data Stats = Stats
+  { statNodeCount :: Int
+  -- ^ Number of nodes in the DFA.
+  , statBytesPerNodeIndexSparse :: Int
+  -- ^ Number of bytes used to represent a node in the sparse representation.
+  , statBytesPerNodeIndexDense :: Int
+  -- ^
+  , statAvgTransitionsPerNode :: Double
+  , statMatchNodeCount :: Int
+  , statAvgMatchesPerMatchNode :: Double
+  , statSizeOfSparse :: Int
+  , statSizeOfDense :: Int
+  }
+
+computeStats :: SimpleDFA -> Stats
+computeStats dfa = Stats
+  { statNodeCount = n
+  , statBytesPerNodeIndexSparse = sparseIxBytes
+  , statBytesPerNodeIndexDense = denseIxBytes
+  , statAvgTransitionsPerNode = avg (map ILMap.size transitions)
+  , statMatchNodeCount = length matches
+  , statAvgMatchesPerMatchNode = avg (map ILSet.size matches)
+  , statSizeOfSparse = sparseSize
+  , statSizeOfDense = denseSize
+  }
+  where
+    n = sizeofArray dfa
+    sparseIxBytes
+      | n <= maxNodes16 = 2
+      | n <= maxNodes32 = 4
+      | otherwise       = error "too many nodes to fit in memory"
+    denseIxBytes
+      | n < maxNodes16 = 2
+      | n < maxNodes32 = 4
+      | otherwise      = error "too many nodes to fit in memory"
+
+    matches = filter (not . ILSet.null) $ map fst $ toList dfa
+    transitions = map snd $ toList dfa
+
+    avg :: Real a => [a] -> Double
+    avg [] = 0
+    avg as = foldl' (\s a -> s + realToFrac a) 0 as / realToFrac (length as)
+
+    -- TODO: calculate size via compact regions?
+    ptrSize = sizeOf (undefined :: Ptr Int)
+    denseSize = n * denseIxBytes * 256 -- node array contents
+              + 2 * ptrSize -- node array overhead
+              + n * ptrSize -- match array contents
+              + 2 * ptrSize -- match array overhead (excluding card table)
+              + 2 * ptrSize -- pointers to the arrays
+    sparseSize = n * 3 * ptrSize -- per-node overhead (ptrs to match set and PrimMap arrays)
+               + n * 4 * ptrSize -- array overhead for transition PrimMaps
+               + (1 + sparseIxBytes) * sum (map ILMap.size transitions) -- transition map contents
+               + 2 * ptrSize -- array overhead (excluding card table)

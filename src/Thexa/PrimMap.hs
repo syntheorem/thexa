@@ -14,9 +14,9 @@ import Data.List (zip)
 import Data.Map qualified as Map
 import Data.Primitive.PrimArray
 import Data.Primitive.Types (Prim)
-
-import Language.Haskell.TH.Syntax (Lift(liftTyped))
+import Language.Haskell.TH.Syntax (Lift)
 import Text.Show (showsPrec)
+import Thexa.Orphans ()
 
 -- | An efficient lookup table for primitive types.
 --
@@ -26,22 +26,15 @@ import Text.Show (showsPrec)
 -- Surprisingly, some basic benchmarking shows that @PrimMap@ lookups don't perform any better than
 -- @IntMap@ lookups. However, @PrimMap@s are much more space efficient.
 data PrimMap k v = PM
-  { pmKeys :: {-# UNPACK #-} !(PrimArray k)
-  , pmVals :: {-# UNPACK #-} !(PrimArray v)
-  }
-  deriving (Eq, Ord)
+  {-# UNPACK #-} !(PrimArray k) -- keys
+  {-# UNPACK #-} !(PrimArray v) -- values
+  deriving (Eq, Ord, Lift)
 
 instance NFData (PrimMap k v) where
   rnf (PM _ _) = ()
 
 instance (Prim k, Prim v, Show k, Show v) => Show (PrimMap k v) where
   showsPrec p = showsPrec p . toList
-
-instance (Prim k, Prim v, Lift k, Lift v) => Lift (PrimMap k v) where
-  liftTyped pm = [|| unsafeFromList n kvs ||]
-    where
-      n   = size pm
-      kvs = toList pm
 
 -- | Construct from a list of key value pairs. @O(n log n)@
 fromList :: (Prim k, Prim v, Ord k) => [(k, v)] -> PrimMap k v
@@ -75,7 +68,7 @@ unsafeFromList n kvs = runST do
 
 -- | Number of entries in the map. @O(1)@
 size :: Prim k => PrimMap k v -> Int
-size = sizeofPrimArray . pmKeys
+size (PM kArr _) = sizeofPrimArray kArr
 {-# INLINE size #-}
 
 -- | Lookup the value associated with the given key. @O(log n)@

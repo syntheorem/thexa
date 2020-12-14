@@ -35,13 +35,18 @@ module Thexa.NFA
 , addTransition
 , addTransitions
 , addEpsilonTransition
+
+-- * Debugging
+, prettyPrint
 ) where
 
 import PreludePrime
 
 import Control.Monad.ST (ST, runST)
+import Data.List (zip)
 import Data.Primitive.Array
 import Data.Primitive.MutVar
+import Numeric (showHex)
 
 import Thexa.GrowArray qualified as GA
 import Thexa.IntLike.Class (IntLike)
@@ -265,3 +270,37 @@ modifyTransitions :: Node -> (Transitions -> Transitions) -> Build ()
 modifyTransitions (Node from) f = Build \bs -> do
   GA.modify' (bsTransitions bs) from f
 {-# INLINE modifyTransitions #-}
+
+---------------
+-- Debugging --
+---------------
+
+-- | Pretty-print a human-readable description of the NFA structure for debugging purposes.
+prettyPrint :: NFA -> String
+prettyPrint NFA{..} = foldMap ppNode $ zip [0..] $ toList nfaTransitions
+  where
+    ppNode :: (Int, Transitions) -> String
+    ppNode (i, Transitions{..}) = prefix <> matchStr <> epsilStr <> transStr
+      where
+        prefix = show i <> if isEmpty then "\n" else ""
+        matchStr
+          | Just k <- matchKey = "\t: MatchKey    " <> show k <> "\n"
+          | otherwise          = ""
+        epsilStr
+          | ILSet.null epsilon = ""
+          | otherwise          = "\t: EpsilonTran " <> show (map unNode  (ILSet.toList epsilon)) <> "\n"
+        transStr
+          | ILMap.null byteMap = ""
+          | otherwise          = "\t: Transitions " <> show (map ppTrans (ILMap.toList byteMap)) <> "\n"
+
+        isEmpty = matchStr == "" && epsilStr == "" && transStr == ""
+        matchKey = ILMap.lookup (Node i) nfaMatchNodes
+
+    ppTrans :: (Word8, NodeSet) -> String
+    ppTrans (b, nodes) = "0x"<>pad<>bHex<>" => "<>show (map unNode (ILSet.toList nodes))
+      where
+        pad  = if length bHex < 2 then "0" else ""
+        bHex = showHex b ""
+
+    unNode :: Node -> Int
+    unNode (Node i) = i

@@ -65,6 +65,12 @@ module Thexa.IntLike.Map
 -- * Filter
 , restrictKeys
 , withoutKeys
+
+-- * Min/Max
+, lookupMin
+, lookupMax
+, findMin
+, findMax
 ) where
 
 import PreludePrime
@@ -302,3 +308,19 @@ restrictKeys (ILMap im) = ILMap . IM.restrictKeys im . ILSet.toIntSet
 withoutKeys :: ILMap k v -> ILSet k -> ILMap k v
 withoutKeys (ILMap im) = ILMap . IM.restrictKeys im . ILSet.toIntSet
 {-# INLINE withoutKeys #-}
+
+lookupMin :: IntLike k => ILMap k v -> Maybe (k, v)
+lookupMin (ILMap im) = map (\(k, v) -> (fromInt k, v)) (IM.lookupMin im)
+{-# INLINE lookupMin #-}
+
+lookupMax :: IntLike k => ILMap k v -> Maybe (k, v)
+lookupMax (ILMap im) = map (\(k, v) -> (fromInt k, v)) (IM.lookupMax im)
+{-# INLINE lookupMax #-}
+
+findMin :: IntLike k => ILMap k v -> (k, v)
+findMin (ILMap im) = let (k, v) = IM.findMin im in (fromInt k, v)
+{-# INLINE findMin #-}
+
+findMax :: IntLike k => ILMap k v -> (k, v)
+findMax (ILMap im) = let (k, v) = IM.findMax im in (fromInt k, v)
+{-# INLINE findMax #-}

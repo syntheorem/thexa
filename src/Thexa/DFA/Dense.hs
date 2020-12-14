@@ -1,9 +1,9 @@
 module Thexa.DFA.Dense
 ( DFA
 , fromSimple
+, toSimple
 , step
 , matches
-, toSimple
 ) where
 
 import PreludePrime
@@ -12,23 +12,17 @@ import Control.Monad.ST (runST)
 import Data.Primitive.Array
 import Data.Primitive.PrimArray
 import Data.Primitive.Types (Prim)
-import Language.Haskell.TH.Syntax (Lift(liftTyped))
+import Language.Haskell.TH.Syntax (Lift)
 
 import Thexa.DFA.Types
 import Thexa.IntLike.Map qualified as ILMap
+import Thexa.Orphans ()
 
 data DFA ix = DFA
   { nodeArr  :: {-# UNPACK #-} !(PrimArray ix)
   , matchArr :: {-# UNPACK #-} !(Array MatchSet)
   }
-
-instance (Lift ix, Prim ix) => Lift (DFA ix) where
-  liftTyped DFA{..} = [|| DFA (primArrayFromListN nsLen ns) (arrayFromListN msLen ms) ||]
-    where
-      ns = primArrayToList nodeArr
-      ms = toList matchArr
-      nsLen = sizeofPrimArray nodeArr
-      msLen = sizeofArray matchArr
+  deriving (Lift)
 
 instance NFData (DFA ix) where
   rnf (DFA _ arr) = rnf arr
@@ -42,8 +36,8 @@ fromSimple arr = runST do
   matchArr <- newArray n (error "uninitialized array element")
 
   for_ [0..(n - 1)] \i -> do
-    let (ms, bm) = indexArray arr i
-    writeArray matchArr i ms
+    (ms, bm) <- indexArrayM arr i
+    writeArray matchArr i $! ms
     for_ [0..255] \b -> do
       let bi = 256*i + fromIntegral b
       case ILMap.lookup b bm of
@@ -58,8 +52,8 @@ toSimple DFA{..} = runST do
   arr <- newArray n (error "uninitialized array element")
 
   for_ [0..(n - 1)] \i -> do
-    let ms = indexArray matchArr i
     let ts = filterMap (indexTrans i) [0..255]
+    ms <- indexArrayM matchArr i
     writeArray arr i (ms, ILMap.fromDistinctAscList ts)
 
   unsafeFreezeArray arr

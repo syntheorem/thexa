@@ -58,7 +58,7 @@ capacity = fmap (sizeofMutableArray . gaMutArr) . readData
 read :: PrimMonad m => GrowArray (PrimState m) a -> Int -> m a
 read ga i = do
   GAData len arr <- readData ga
-  if i > len || i < 0
+  if i < 0 || i >= len
     then error "index out of bounds"
     else readArray arr i
 {-# INLINABLE read #-}
@@ -67,7 +67,7 @@ read ga i = do
 write :: PrimMonad m => GrowArray (PrimState m) a -> Int -> a -> m ()
 write ga i a = do
   GAData len arr <- readData ga
-  if i > len || i < 0
+  if i < 0 || i >= len
     then error "index out of bounds"
     else writeArray arr i a
 {-# INLINABLE write #-}
@@ -76,7 +76,7 @@ write ga i a = do
 modify :: PrimMonad m => GrowArray (PrimState m) a -> Int -> (a -> a) -> m ()
 modify ga i f = do
   GAData len arr <- readData ga
-  if i > len || i < 0
+  if i < 0 || i >= len
     then error "index out of bounds"
     else do
       a <- readArray arr i
@@ -87,7 +87,7 @@ modify ga i f = do
 modify' :: PrimMonad m => GrowArray (PrimState m) a -> Int -> (a -> a) -> m ()
 modify' ga i f = do
   GAData len arr <- readData ga
-  if i > len || i < 0
+  if i < 0 || i >= len
     then error "index out of bounds"
     else do
       a <- readArray arr i
