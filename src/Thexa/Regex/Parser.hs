@@ -1,4 +1,7 @@
 {-# LANGUAGE NoOverloadedStrings #-}
+
+-- | See @SYNTAX.md@ for more information about the regex syntax that we're parsing here. Most of
+-- the subparsers in this file have a corresponding production in the syntax description.
 module Thexa.Regex.Parser
 ( ParseErrors
 , parseRegex
@@ -9,6 +12,9 @@ module Thexa.Regex.Parser
 import PreludePrime
 
 import Data.Char qualified as Char
+import Data.Set qualified as Set
+import Numeric (showHex)
+import Text.Megaparsec ((<?>))
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P
 import Text.Megaparsec.Char.Lexer qualified as L
@@ -23,10 +29,10 @@ type Parser = P.Parsec Void String
 type ParseErrors = P.ParseErrorBundle String Void
 
 parseRegex :: String -> Either ParseErrors RegexAST
-parseRegex = P.parse (regex <* P.eof) ""
+parseRegex = P.parse (regex <* P.hidden P.eof) ""
 
 parseCharSet :: String -> Either ParseErrors CharSetAST
-parseCharSet = P.parse (charSet <* P.eof) ""
+parseCharSet = P.parse (charSet <* P.hidden P.eof) ""
 
 -- | Pretty-print the parse errors.
 parseErrorsPretty :: ParseErrors -> String
@@ -38,49 +44,65 @@ parseErrorsPretty = P.errorBundlePretty
 
 -- | Top-level parser used by the regex quasiquoter.
 regex :: Parser RegexAST
-regex = whitespace >> P.choice
-  [ symbol "|" >> (RE.alt RE.Empty <$> regex)
-  , regexAtomRepeat >>= regexRec
-  , pure RE.Empty
-  ]
+regex = do
+  whitespace
+  re <- RE.concat <$> P.many regexQuantifiedAtom
+  P.choice
+    [ symbol "|" >> (RE.alt re <$> regex)
+    , failIfOneOf "*+?{" "quantifier must follow a non-empty regex"
+    , pure re
+    ]
 
--- | Recursive case of the regex parser, where we pass in the prefix of the regex that we've already
--- parsed, and then either form a sequence or alternative with the rest of the regex.
-regexRec :: RegexAST -> Parser RegexAST
-regexRec re = P.choice
-  [ symbol "|" >> (RE.alt re <$> regex)
-  , (RE.append re <$> regexAtomRepeat) >>= regexRec
-  , pure re
-  ]
-
--- | Parses a regex atom possibly followed by a repeater.
-regexAtomRepeat :: Parser RegexAST
-regexAtomRepeat = do
+-- | Parses a regex atom possibly followed by a quantifier.
+regexQuantifiedAtom :: Parser RegexAST
+regexQuantifiedAtom = do
   re <- regexAtom
   P.choice
     [ symbol "?" $> RE.opt re
     , symbol "+" $> RE.plus re
     , symbol "*" $> RE.star re
-    , regexRepeatBraces re
+    , regexRepeater re
     , pure re
     ]
 
--- | Parses a repeat expression of the form @{n}@, @{n,}@, or @{n,m}@, where @n@ and @m@ are decimal
--- numbers. Then applies the correct repeat to the provided regex.
-regexRepeatBraces :: RegexAST -> Parser RegexAST
-regexRepeatBraces re =
-  P.between (symbol "{") (symbol "}") do
-    n <- bound
-    P.choice
-      [ symbol "," >> P.choice
-          [ bound <&> \m -> RE.repeatBounded n m re
-          , pure (RE.repeatUnbounded n re)
-          ]
-      , pure (RE.repeat n re)
-      ]
+-- | Parses a repeat expression of the form @{n}@, @{n,}@, @{,m}@ or @{n,m}@, where @n@ and @m@ are
+-- decimal numbers. Then applies the correct repeat to the provided regex.
+regexRepeater :: RegexAST -> Parser RegexAST
+regexRepeater re = P.between openBrace (symbol "}") $ P.choice
+  [ upperBounded
+  , P.try exactBounded
+  , lowerBounded
+  ]
   where
-    bound :: Parser Natural
-    bound = lexeme L.decimal
+    number :: Parser Natural
+    number = lexeme L.decimal
+
+    -- We need to ensure that we fail the parser without consuming input if we see an opening double
+    -- brace, since that begins a regex splice rather than repeat braces.
+    openBrace = lexeme $ P.try do
+      _ <- P.char '{'
+      P.notFollowedBy (P.char '{')
+
+    upperBounded = do
+      _ <- symbol ","
+      m <- number
+      pure (RE.repeatBounded 0 m re)
+
+    exactBounded = do
+      n <- number
+      P.notFollowedBy (P.char ',')
+      pure (RE.repeat n re)
+
+    lowerBounded = do
+      n <- number
+      _ <- symbol ","
+
+      mOffset <- P.getOffset
+      P.optional number >>= \case
+        Nothing            -> pure (RE.repeatUnbounded n re)
+        Just m | m >= n    -> pure (RE.repeatBounded n m re)
+        Just m | otherwise -> failOffset mOffset $
+          "repeat quantifier upper bound ("<>show m<>") is smaller than lower bound ("<>show n<>")"
 
 regexAtom :: Parser RegexAST
 regexAtom = P.choice
@@ -92,30 +114,37 @@ regexAtom = P.choice
   ]
 
 regexCharSet :: Parser RegexAST
-regexCharSet = (charSetBrackets <|> charSetSplice) >>= \case
-  CS.Chars cs -> case RE.tryChars cs of
-    Just re -> pure re
-    Nothing -> fail "empty character set in regex will match nothing"
-  cs -> pure (RE.Chars cs)
+regexCharSet = do
+  csOffset <- P.getOffset
+  csAST <- P.between (symbol "[") (symbol "]") charSet
+  case csAST of
+    CS.Chars cs -> case RE.tryChars cs of
+      Just re -> pure re
+      Nothing -> failOffset csOffset "empty character set in regex will match nothing"
+    _ -> pure (RE.Chars csAST)
 
 regexString :: Parser RegexAST
-regexString = do
-  q <- P.char '\'' <|> P.char '"'
-  s <- P.many (escapedChar <|> P.anySingleBut q)
-  _ <- symbol [q]
+regexString = lexeme do
+  _ <- P.char '"'
+  s <- P.many stringChar
+  _ <- P.char '"'
   pure (RE.string s)
+  where
+    stringChar = P.choice
+      [ charEscape "\""
+      , P.anySingleBut '"'
+      ]
 
 regexChar :: Parser RegexAST
 regexChar = lexeme $
   RE.char <$> P.choice
-    [ escapedChar
-    , P.noneOf "?+*|{}()"
+    [ charEscape "(){}[]*+?|\" "
+    , P.noneOf "(){}[]*+?|\"" <?> "non-special character"
     ]
 
 regexSplice :: Parser RegexAST
-regexSplice = lexeme do
-  _ <- P.char '%'
-  RE.Splice <$> spliceName
+regexSplice = P.between (symbol "{{") (symbol "}}") do
+  RE.Splice <$> haskellVar
 
 --------------------
 -- CharSet Parser --
@@ -127,78 +156,61 @@ regexSplice = lexeme do
 -- inverts it and then parse a non-empty list of charset atoms.
 charSet :: Parser CharSetAST
 charSet = whitespace >> P.choice
-  [ symbol "^" >> (CS.complement <$> charSetInner)
-  , charSetInner
+  [ symbol "^" >> (CS.complement <$> charSetAtoms)
+  , do
+      cs <- charSetAtoms
+      P.choice
+        [ symbol "^" >> (CS.difference cs <$> charSetAtoms)
+        , pure cs
+        ]
   ]
 
--- | Parse a charset after we've already checked for @^@.
-charSetInner :: Parser CharSetAST
-charSetInner = do
-  cs <- charSetAtom
-  charSetRec cs
-
--- | Recursive case of the charset parser, where we pass in the prefix of the charset parsed so far
--- and then either union or difference it with the rest of the charset.
-charSetRec :: CharSetAST -> Parser CharSetAST
-charSetRec cs = P.choice
-  [ CS.difference cs <$> (symbol "^" >> charSetInner)
-  , (CS.union cs <$> charSetAtom) >>= charSetRec
-  , pure cs
-  ]
+-- | Parse zero or more charset atoms.
+charSetAtoms :: Parser CharSetAST
+charSetAtoms = CS.unions <$> P.many charSetAtom
 
 charSetAtom :: Parser CharSetAST
 charSetAtom = P.choice
-  [ charSetBrackets
-  , charSetSplice
-  , singleCharOrRange
+  [ charSetSplice
+  , P.between (symbol "[") (symbol "]") charSet
+  , charSetCharOrRange
+  , failIfOneOf "-" "expected character before range operator"
   ]
 
-charSetBrackets :: Parser CharSetAST
-charSetBrackets = P.between (symbol "[") (symbol "]") charSet
-
 -- | Parse a single character or character range in a charset.
-singleCharOrRange :: Parser CharSetAST
-singleCharOrRange = do
-  c <- singleChar
+charSetCharOrRange :: Parser CharSetAST
+charSetCharOrRange = do
+  c <- charSetChar
   charSetRange c <|> pure (CS.char c)
 
 charSetRange :: Char -> Parser CharSetAST
 charSetRange c1 = do
   _ <- symbol "-"
-  c2 <- singleChar
+  c2Offset <- P.getOffset
+  c2 <- charSetChar <?> "upper bound of character range"
   case compare c1 c2 of
     EQ -> pure (CS.char c1)
     LT -> pure (CS.range c1 c2)
-    GT -> fail "empty character range"
+    GT -> failOffset c2Offset $ "upper bound of range (code point 0x"<>showHex (Char.ord c2) ") "
+            <>"is smaller than the lower bound (code point 0x"<>showHex (Char.ord c1) ")"
 
--- | Parse a single character (standalone, quoted, or escaped) in a charset.
-singleChar :: Parser Char
-singleChar = lexeme $ P.choice
-  [ quotedChar
-  , escapedChar
-  , P.noneOf "^-[]$"
+charSetChar :: Parser Char
+charSetChar = lexeme $ P.choice
+  [ charEscape "[]^- "
+  , P.noneOf "[]^-" <?> "non-special character"
   ]
 
--- | Parse a character in single or double quotes.
-quotedChar :: Parser Char
-quotedChar = do
-  q <- P.char '\'' <|> P.char '"'
-  c <- escapedChar <|> P.anySingleBut q
-  _ <- P.char q
-  pure c
-
 charSetSplice :: Parser CharSetAST
-charSetSplice = lexeme do
-  _ <- P.char '$'
-  CS.Splice <$> spliceName
+charSetSplice = P.between (symbol "[:") (symbol ":]") do
+  CS.Splice <$> haskellVar
 
 --------------------
 -- Helper Parsers --
 --------------------
 
 -- | Parse a (possibly qualified) Haskell identifier.
-spliceName :: Parser String
-spliceName = do
+haskellVar :: Parser String
+haskellVar = lexeme $ P.label "Haskell variable identifier" $ do
   modid <- fold <$> P.many do
     c0 <- P.upperChar
     cs <- P.many identChar
@@ -214,18 +226,21 @@ spliceName = do
 -- | Parse an escaped character.
 --
 -- Does NOT consume whitespace following the escape.
-escapedChar :: Parser Char
-escapedChar = P.char '\\' >> P.choice
-  [ P.char 'x' >> xEscape
-  , P.char 'u' >> uEscape
-  , P.char 'n' $> '\n'
-  , P.char 't' $> '\t'
-  , P.char 'r' $> '\r'
-  , P.char 'f' $> '\f'
-  , P.char 'v' $> '\v'
-  , P.char '0' $> '\0'
-  , P.anySingle -- any other escaped character maps to itself
-  ]
+charEscape :: String -> Parser Char
+charEscape otherEscapes = P.label "escaped character" do
+  _ <- P.char '\\'
+  P.label "valid escape char" $ P.choice
+    [ P.char 'x'  >> xEscape
+    , P.char 'u'  >> uEscape
+    , P.char 'n'  $> '\n'
+    , P.char 't'  $> '\t'
+    , P.char 'r'  $> '\r'
+    , P.char 'f'  $> '\f'
+    , P.char 'v'  $> '\v'
+    , P.char '0'  $> '\0'
+    , P.char '\\' $> '\\'
+    , P.oneOf otherEscapes
+    ]
 
 -- | Parse an ASCII escape following a @\x@.
 --
@@ -240,51 +255,54 @@ xEscape = hexCode <|> controlCode
       pure (Char.chr (fromIntegral code))
 
     -- Note that we don't consume whitespace after the '}'
-    controlCode = P.between (symbol "{") (P.char '}') $ P.choice
-      [ symbol "NUL" $> '\NUL'
-      , symbol "SOH" $> '\SOH'
-      , symbol "STX" $> '\STX'
-      , symbol "ETX" $> '\ETX'
-      , symbol "EOT" $> '\EOT'
-      , symbol "ENQ" $> '\ENQ'
-      , symbol "ACK" $> '\ACK'
-      , symbol "BEL" $> '\BEL'
-      , symbol "BS"  $> '\BS'
-      , symbol "HT"  $> '\HT'
-      , symbol "LF"  $> '\LF'
-      , symbol "VT"  $> '\VT'
-      , symbol "FF"  $> '\FF'
-      , symbol "CR"  $> '\CR'
-      , symbol "SO"  $> '\SO'
-      , symbol "SI"  $> '\SI'
-      , symbol "DLE" $> '\DLE'
-      , symbol "DC1" $> '\DC1'
-      , symbol "DC2" $> '\DC2'
-      , symbol "DC3" $> '\DC3'
-      , symbol "DC4" $> '\DC4'
-      , symbol "NAK" $> '\NAK'
-      , symbol "SYN" $> '\SYN'
-      , symbol "ETB" $> '\ETB'
-      , symbol "CAN" $> '\CAN'
-      , symbol "EM"  $> '\EM'
-      , symbol "SUB" $> '\SUB'
-      , symbol "ESC" $> '\ESC'
-      , symbol "FS"  $> '\FS'
-      , symbol "GS"  $> '\GS'
-      , symbol "RS"  $> '\RS'
-      , symbol "US"  $> '\US'
-      , symbol "SP"  $> '\SP'
-      , symbol "DEL" $> '\DEL'
-      ]
+    controlCode = P.between (symbol "{") (P.char '}') $
+      P.label "ASCII control code abbreviation" $ P.choice
+        [ symbol "NUL" $> '\NUL'
+        , symbol "SOH" $> '\SOH'
+        , symbol "STX" $> '\STX'
+        , symbol "ETX" $> '\ETX'
+        , symbol "EOT" $> '\EOT'
+        , symbol "ENQ" $> '\ENQ'
+        , symbol "ACK" $> '\ACK'
+        , symbol "BEL" $> '\BEL'
+        , symbol "BS"  $> '\BS'
+        , symbol "HT"  $> '\HT'
+        , symbol "LF"  $> '\LF'
+        , symbol "VT"  $> '\VT'
+        , symbol "FF"  $> '\FF'
+        , symbol "CR"  $> '\CR'
+        , symbol "SO"  $> '\SO'
+        , symbol "SI"  $> '\SI'
+        , symbol "DLE" $> '\DLE'
+        , symbol "DC1" $> '\DC1'
+        , symbol "DC2" $> '\DC2'
+        , symbol "DC3" $> '\DC3'
+        , symbol "DC4" $> '\DC4'
+        , symbol "NAK" $> '\NAK'
+        , symbol "SYN" $> '\SYN'
+        , symbol "ETB" $> '\ETB'
+        , symbol "CAN" $> '\CAN'
+        , symbol "EM"  $> '\EM'
+        , symbol "SUB" $> '\SUB'
+        , symbol "ESC" $> '\ESC'
+        , symbol "FS"  $> '\FS'
+        , symbol "GS"  $> '\GS'
+        , symbol "RS"  $> '\RS'
+        , symbol "US"  $> '\US'
+        , symbol "DEL" $> '\DEL'
+        ]
 
 -- | Parse a Unicode escape following a @\u@.
 uEscape :: Parser Char
-uEscape = P.between (symbol "{") (P.char '}') $ do
-  digits <- lexeme (P.some P.hexDigitChar)
-  let code = digitsToInt 16 digits
-  unless (code <= 0x10FFFF) $
-    fail "Unicode escape code is out of bounds (maximum is \\u{10FFFF})"
-  pure (Char.chr (fromIntegral code))
+uEscape = P.between (symbol "{") (P.char '}') do
+  hexNumOffset <- P.getOffset
+  _ <- P.optional (P.string "0x")
+  code <- lexeme L.hexadecimal
+
+  unless (code <= 0x10FFFF) do
+    failOffset hexNumOffset "invalid Unicode code point (maximum is 0x10FFFF)"
+
+  pure (Char.chr (fromInteger code))
 
 -- | Convert a list of digits in the given base to an Integer.
 digitsToInt :: Integer -> [Char] -> Integer
@@ -302,3 +320,15 @@ symbol = L.symbol whitespace
 -- | Consume all whitespace.
 whitespace :: Parser ()
 whitespace = L.space P.space1 empty empty
+
+-- | Fail the parse with a custom offset for the error message.
+failOffset :: Int -> String -> Parser a
+failOffset offset msg = P.parseError (P.FancyError offset (Set.singleton (P.ErrorFail msg)))
+
+-- | If the next char is one of the chars in the first argument, fail after consuming it and using
+-- the second argument as the error message. Useful for providing better errors.
+failIfOneOf :: String -> String -> Parser a
+failIfOneOf chars msg = P.hidden $ do
+  offset <- P.getOffset
+  _ <- P.oneOf chars
+  failOffset offset msg

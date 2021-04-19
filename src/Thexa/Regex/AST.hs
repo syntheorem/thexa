@@ -2,13 +2,13 @@ module Thexa.Regex.AST where
 
 import PreludePrime
 
-import Data.Foldable (foldl1, foldr1)
+import Data.Foldable (foldr1)
 import Data.String (IsString(fromString))
 
 import Thexa.Regex.CharSet (CharSet)
 import Thexa.Regex.CharSet qualified as CS
 import Thexa.Regex.CharSet.AST (CharSetAST, IsCharSet(fromCharSet))
-import Thexa.Regex.CharSet.AST qualified as CS (fromAST)
+import Thexa.Regex.CharSet.AST qualified as CS (fromAST, normalize)
 
 type Regex = RegexAST' CharSet Void
 type RegexAST = RegexAST' CharSetAST String
@@ -100,18 +100,16 @@ string = concat . map char
 
 -- | Regex that matches its first argument and then its second.
 append :: RegexAST' cs s -> RegexAST' cs s -> RegexAST' cs s
-append r1 (Seq r2 r3) = append (append r1 r2) r3
-append r1 r2          = Seq r1 r2
+append = Seq
 
 -- | 'append' a list of regexes in order.
 concat :: [RegexAST' cs s] -> RegexAST' cs s
 concat [] = Empty
-concat rs = foldl1 append rs
+concat rs = foldr1 append rs
 
 -- | Regex that matches either of its two arguments.
 alt :: RegexAST' cs s -> RegexAST' cs s -> RegexAST' cs s
-alt (Alt r1 r2) r3 = alt r1 (alt r2 r3)
-alt r1          r2 = Alt r1 r2
+alt = Alt
 
 -- | 'alt' a list of regexes.
 alts :: [RegexAST' cs s] -> RegexAST' cs s
@@ -143,3 +141,29 @@ repeatBounded :: Natural -> Natural -> RegexAST' cs s -> RegexAST' cs s
 repeatBounded n m r
   | m < n     = Empty
   | otherwise = Repeat r n (Just (m - n))
+
+-- | Normalize 'RegexAST's so that if @a@ and @b@ are semantically equivalent, @normalize a ==
+-- normalize b@. This serves no real purpose other than testing the parser without relying on the
+-- specific AST that is generated.
+--
+-- The normalized AST satisfies the following conditions:
+-- 1. The first argument to a 'Seq' is not a 'Seq'.
+-- 2. The first argument to an 'Alt' is not an 'Alt'.
+-- 3. The argument to 'Chars' is normalized.
+normalize :: RegexAST -> RegexAST
+normalize ast@Empty      = ast
+normalize ast@(Splice _) = ast
+normalize (Chars cs)     = Chars (CS.normalize cs)
+
+normalize (Repeat _  n (Just m)) | m < n = Empty
+normalize (Repeat re n m) = Repeat (normalize re) n m
+
+normalize (Seq ast1 ast2) = normalizeSeq ast1 (normalize ast2)
+  where
+    normalizeSeq (Seq ast1' ast2') rest = normalizeSeq ast1' (normalizeSeq ast2' rest)
+    normalizeSeq ast rest = Seq (normalize ast) rest
+
+normalize (Alt ast1 ast2) = normalizeAlt ast1 (normalize ast2)
+  where
+    normalizeAlt (Alt ast1' ast2') rest = normalizeAlt ast1' (normalizeAlt ast2' rest)
+    normalizeAlt ast rest = Alt (normalize ast) rest

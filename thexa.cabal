@@ -5,6 +5,9 @@ version:        0.1.0.0
 synopsis:       Template Haskell lEXical Analyzer
 build-type:     Simple
 
+extra-doc-files:
+  SYNTAX.md
+
 common deps
   build-depends:
       base >=4.8 && <5

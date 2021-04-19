@@ -45,9 +45,9 @@ type EvalCondition str cond = str -> str -> cond -> Bool
 
 -- | Result of trying to get the 'nextMatch' of the input.
 --
--- On a successful match, the result contains the remaining input stream. Note that it does not
--- contain the string that was actually matched; to provide that, you need a way to derive it from
--- the initial input and the remaining input, e.g. by having @str@ contain an offset that is
+-- On a successful match, the result contains the remaining unconsumed input stream. Note that it
+-- does not contain the string that was actually matched; to provide that, you need a way to derive
+-- it from the initial input and the remaining input, e.g. by having @str@ contain an offset that is
 -- incremented by the 'GetNextByte' function.
 data MatchResult str act
 
@@ -102,7 +102,7 @@ nextMatch (Lexer dfa matchArr) getNextByte evalCond = go
       | otherwise                         = matchStack'
       where
         -- Push the matches for the current node onto the match stack. Note that the order is
-        -- important, because matches earlier in the list are prioritized. Since the match keys are
+        -- important, because matches higher on the stack are prioritized. Since the match keys are
         -- the index of the rule that we're matching, and we want to prioritize earlier rules, using
         -- a foldr respects this ordering since we'll fold over the match keys in descending order.
         matchStack' = ILSet.foldr pushMatch matchStack (DFA.matches dfa node)

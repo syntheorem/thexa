@@ -1,3 +1,4 @@
+-- TODO: add notFollowedBy
 module Thexa.Lexer.TH where
 
 import PreludePrime

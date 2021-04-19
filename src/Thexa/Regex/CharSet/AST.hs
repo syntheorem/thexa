@@ -1,6 +1,7 @@
 module Thexa.Regex.CharSet.AST where
 
 import PreludePrime
+import Data.Foldable (foldl1)
 import Data.String (IsString(fromString))
 
 import Thexa.Regex.CharSet (CharSet)
@@ -53,6 +54,9 @@ fromAST = \case
   Union cs1 cs2 -> CS.union      <$> fromAST cs1 <*> fromAST cs2
   Diff  cs1 cs2 -> CS.difference <$> fromAST cs1 <*> fromAST cs2
 
+empty :: CharSetAST
+empty = chars CS.empty
+
 char :: Char -> CharSetAST
 char = Chars . CS.singleton
 
@@ -66,16 +70,55 @@ range :: Char -> Char -> CharSetAST
 range l u = chars (CS.range l u)
 
 union :: CharSetAST -> CharSetAST -> CharSetAST
-union (Chars rs1) (Chars rs2)     = Chars (CS.union rs1 rs2)
-union cs1         (Union cs2 cs3) = union (union cs1 cs2) cs3
-union cs1         cs2             = Union cs1 cs2
+union (Chars cs1) (Chars cs2) = Chars (CS.union cs1 cs2)
+union ast1        ast2        = Union ast1 ast2
 
 unions :: [CharSetAST] -> CharSetAST
-unions = foldl' union (Chars CS.empty)
+unions [] = Chars CS.empty
+unions cs = foldl1 union cs
 
 difference :: CharSetAST -> CharSetAST -> CharSetAST
-difference (Chars rs1) (Chars rs2) = Chars (CS.difference rs1 rs2)
-difference cs1         cs2         = Union cs1 cs2
+difference (Chars cs1) (Chars cs2) = Chars (CS.difference cs1 cs2)
+difference ast1        ast2        = Diff ast1 ast2
 
 complement :: CharSetAST -> CharSetAST
 complement = difference (Chars CS.full)
+
+-- | Normalize 'CharSetAST's so that if @a@ and @b@ are semantically equivalent, @normalize a ==
+-- normalize b@. This serves no real purpose other than testing the parser without relying on the
+-- specific AST that is generated.
+--
+-- The only thing this really modifies is nested trees of 'Union's. Any 'Chars' at the leaves of
+-- these trees are combined and bubbled up to the left branch of the root of the 'Union' tree. If
+-- the final 'Chars' constructor contains the empty set, then it is eliminated altogether. If it is
+-- possible to reduce the entire AST to a single 'Chars' constructor, then it will be. The left
+-- branch of a 'Union' will not be 'Union'
+normalize :: CharSetAST -> CharSetAST
+normalize ast@(Chars  _) = ast
+normalize ast@(Splice _) = ast
+
+normalize (Diff ast1 ast2) = case (normalize ast1, normalize ast2) of
+  (Chars cs1, Chars cs2) -> Chars (CS.difference cs1 cs2)
+  (ast1'    , ast2'    ) -> Diff ast1' ast2'
+
+normalize (Union ast1 ast2) = case normalize ast2 of
+  Chars cs2 | Chars cs1 <- ast1 -> Chars (CS.union cs1 cs2)
+  ast2'@(Chars _)               -> normalize (Union ast2' ast1)
+  Union (Chars cs) ast2'        -> Union (Chars (CS.union cs ast1cs)) (normalizeUnion ast1 ast2')
+  ast2' | CS.null ast1cs        -> ast2'
+        | otherwise             -> Union (Chars ast1cs) ast2'
+  where
+    ast1cs = extractCharSet ast1
+
+    extractCharSet = \case
+      Union x y -> CS.union (extractCharSet x) (extractCharSet y)
+      Chars cs  -> cs
+      _         -> CS.empty
+
+    normalizeUnion (Union x y) rest = normalizeUnion x (normalizeUnion y rest)
+    normalizeUnion (Chars _)   rest = rest
+    normalizeUnion ast         rest = Union (normalize ast) rest
+
+
+
+
