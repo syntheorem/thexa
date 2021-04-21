@@ -142,8 +142,8 @@ repeatBounded n m r
   | m < n     = Empty
   | otherwise = Repeat r n (Just (m - n))
 
--- | Normalize 'RegexAST's so that if @a@ and @b@ are semantically equivalent, @normalize a ==
--- normalize b@. This serves no real purpose other than testing the parser without relying on the
+-- | Normalize 'RegexAST's so that if @a@ and @b@ are equivalent up to reassociation, @normalize a
+-- == normalize b@. This serves no real purpose other than testing the parser without relying on the
 -- specific AST that is generated.
 --
 -- The normalized AST satisfies the following conditions:

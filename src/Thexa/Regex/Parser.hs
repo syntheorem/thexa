@@ -12,8 +12,10 @@ module Thexa.Regex.Parser
 import PreludePrime
 
 import Data.Char qualified as Char
+import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Numeric (showHex)
+
 import Text.Megaparsec ((<?>))
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P
@@ -23,6 +25,7 @@ import Thexa.Regex.AST (RegexAST)
 import Thexa.Regex.AST qualified as RE
 import Thexa.Regex.CharSet.AST (CharSetAST)
 import Thexa.Regex.CharSet.AST qualified as CS
+import Thexa.Regex.Unicode qualified as UC
 
 type Parser = P.Parsec Void String
 
@@ -107,6 +110,8 @@ regexRepeater re = P.between openBrace (symbol "}") $ P.choice
 regexAtom :: Parser RegexAST
 regexAtom = P.choice
   [ P.between (symbol "(") (symbol ")") regex
+  , RE.Chars <$> charSetSplice
+  , RE.Chars <$> unicodePropEscape
   , regexCharSet
   , regexSplice
   , regexString
@@ -173,6 +178,7 @@ charSetAtom :: Parser CharSetAST
 charSetAtom = P.choice
   [ charSetSplice
   , P.between (symbol "[") (symbol "]") charSet
+  , unicodePropEscape
   , charSetCharOrRange
   , failIfOneOf "-" "expected character before range operator"
   ]
@@ -205,23 +211,8 @@ charSetSplice = P.between (symbol "[:") (symbol ":]") do
   CS.Splice <$> haskellVar
 
 --------------------
--- Helper Parsers --
+-- Escape Parsers --
 --------------------
-
--- | Parse a (possibly qualified) Haskell identifier.
-haskellVar :: Parser String
-haskellVar = lexeme $ P.label "Haskell variable identifier" $ do
-  modid <- fold <$> P.many do
-    c0 <- P.upperChar
-    cs <- P.many identChar
-    _  <- P.char '.'
-    pure ((c0 : cs) <> ".")
-
-  c0 <- P.lowerChar
-  cs <- P.many identChar
-  pure (modid <> (c0 : cs))
-  where
-    identChar = P.alphaNumChar <|> P.char '_' <|> P.char '\''
 
 -- | Parse an escaped character.
 --
@@ -230,16 +221,15 @@ charEscape :: String -> Parser Char
 charEscape otherEscapes = P.label "escaped character" do
   _ <- P.char '\\'
   P.label "valid escape char" $ P.choice
-    [ P.char 'x'  >> xEscape
-    , P.char 'u'  >> uEscape
-    , P.char 'n'  $> '\n'
-    , P.char 't'  $> '\t'
-    , P.char 'r'  $> '\r'
-    , P.char 'f'  $> '\f'
-    , P.char 'v'  $> '\v'
-    , P.char '0'  $> '\0'
-    , P.char '\\' $> '\\'
-    , P.oneOf otherEscapes
+    [ P.char 'x' >> xEscape
+    , P.char 'u' >> uEscape
+    , P.char 'n' $> '\n'
+    , P.char 't' $> '\t'
+    , P.char 'r' $> '\r'
+    , P.char 'f' $> '\f'
+    , P.char 'v' $> '\v'
+    , P.char '0' $> '\0'
+    , P.oneOf ('\\':otherEscapes)
     ]
 
 -- | Parse an ASCII escape following a @\x@.
@@ -303,6 +293,59 @@ uEscape = P.between (symbol "{") (P.char '}') do
     failOffset hexNumOffset "invalid Unicode code point (maximum is 0x10FFFF)"
 
   pure (Char.chr (fromInteger code))
+
+-- | Parse a Unicode property escape.
+unicodePropEscape :: Parser CharSetAST
+unicodePropEscape = P.label "Unicode property escape" do
+  _ <- P.string "\\p"
+  P.between (symbol "{") (symbol "}") do
+    propNameOffset <- P.getOffset
+    propName <- lexeme $ P.some $ (P.alphaNumChar <|> P.char '-' <|> P.char '_')
+
+    case Map.lookup propName propMap of
+      Just cs -> pure (CS.Chars cs)
+      Nothing -> failOffset propNameOffset $
+        "unknown Unicode category, script, or block: "<>propName
+  where
+    propMap :: UC.PropertyMap
+    propMap = blocks
+      `unionProps` UC.scripts
+      `unionProps` UC.generalCategories
+
+    -- As a sanity check, we want to make sure that none of the properties we're combining have the
+    -- same name. Since we use the strict map functions, these errors will be evaluated as long as
+    -- we evaluate the combined map, so any such errors will be caught by any test that attempts to
+    -- parse a '\p' escape.
+    unionProps = Map.unionWithKey
+      (\k _ _ -> error ("duplicate Unicode property name: "<>k))
+
+    -- The names of the Unicode blocks need to be modified to match the syntax. Specifically, they
+    -- must be prefixed with "In" and have space characters replaced with underscores.
+    blocks = Map.mapKeysWith
+      (\_ _ -> error "duplicate block names")
+      (\blkName -> "In"<>replaceWS blkName)
+      UC.blocks
+
+    replaceWS = map (\c -> if c == ' ' then '_' else c)
+
+--------------------
+-- Helper Parsers --
+--------------------
+
+-- | Parse a (possibly qualified) Haskell identifier.
+haskellVar :: Parser String
+haskellVar = lexeme $ P.label "Haskell variable identifier" $ do
+  modid <- fold <$> P.many do
+    c0 <- P.upperChar
+    cs <- P.many identChar
+    _  <- P.char '.'
+    pure ((c0 : cs) <> ".")
+
+  c0 <- P.lowerChar
+  cs <- P.many identChar
+  pure (modid <> (c0 : cs))
+  where
+    identChar = P.alphaNumChar <|> P.char '_' <|> P.char '\''
 
 -- | Convert a list of digits in the given base to an Integer.
 digitsToInt :: Integer -> [Char] -> Integer

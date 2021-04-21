@@ -84,8 +84,8 @@ difference ast1        ast2        = Diff ast1 ast2
 complement :: CharSetAST -> CharSetAST
 complement = difference (Chars CS.full)
 
--- | Normalize 'CharSetAST's so that if @a@ and @b@ are semantically equivalent, @normalize a ==
--- normalize b@. This serves no real purpose other than testing the parser without relying on the
+-- | Normalize 'CharSetAST's so that if @a@ and @b@ are equivalent up to reassociation, @normalize a
+-- == normalize b@. This serves no real purpose other than testing the parser without relying on the
 -- specific AST that is generated.
 --
 -- The only thing this really modifies is nested trees of 'Union's. Any 'Chars' at the leaves of
@@ -94,12 +94,9 @@ complement = difference (Chars CS.full)
 -- possible to reduce the entire AST to a single 'Chars' constructor, then it will be. The left
 -- branch of a 'Union' will not be 'Union'
 normalize :: CharSetAST -> CharSetAST
-normalize ast@(Chars  _) = ast
-normalize ast@(Splice _) = ast
-
-normalize (Diff ast1 ast2) = case (normalize ast1, normalize ast2) of
-  (Chars cs1, Chars cs2) -> Chars (CS.difference cs1 cs2)
-  (ast1'    , ast2'    ) -> Diff ast1' ast2'
+normalize ast@(Chars  _)   = ast
+normalize ast@(Splice _)   = ast
+normalize (Diff ast1 ast2) = difference (normalize ast1) (normalize ast2)
 
 normalize (Union ast1 ast2) = case normalize ast2 of
   Chars cs2 | Chars cs1 <- ast1 -> Chars (CS.union cs1 cs2)

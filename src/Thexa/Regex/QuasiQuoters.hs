@@ -6,8 +6,9 @@ import Language.Haskell.TH (Q)
 import Language.Haskell.TH.Quote (QuasiQuoter(..))
 import Language.Haskell.TH qualified as TH
 
-import Thexa.Regex.AST (RegexAST)
+import Thexa.Regex.AST (RegexAST, Regex)
 import Thexa.Regex.AST qualified as RE
+import Thexa.Regex.CharSet (CharSet)
 import Thexa.Regex.CharSet qualified as CS
 import Thexa.Regex.CharSet.AST (CharSetAST)
 import Thexa.Regex.CharSet.AST qualified as CS (CharSetAST(..))
@@ -32,12 +33,12 @@ qqExp qq = QuasiQuoter
 quoteRegex :: String -> Q TH.Exp
 quoteRegex str = case parseRegex str of
   Left errs -> fail (parseErrorsPretty errs)
-  Right r   -> liftRE r
+  Right r   -> [| $(liftRE r) :: Regex |]
 
 quoteCharSet :: String -> Q TH.Exp
 quoteCharSet str = case parseCharSet str of
   Left errs -> fail (parseErrorsPretty errs)
-  Right c   -> liftCS c
+  Right c   -> [| $(liftCS c) :: CharSet |]
 
 liftRE :: RegexAST -> Q TH.Exp
 liftRE = \case

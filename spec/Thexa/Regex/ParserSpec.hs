@@ -2,6 +2,7 @@ module Thexa.Regex.ParserSpec where
 
 import PreludePrime
 
+import Data.Map ((!))
 import Test.Hspec
 import Test.Hspec.Megaparsec
 
@@ -10,6 +11,7 @@ import Thexa.Regex.AST qualified as RE
 import Thexa.Regex.CharSet.AST (CharSetAST)
 import Thexa.Regex.CharSet.AST qualified as CS
 import Thexa.Regex.Parser
+import Thexa.Regex.Unicode qualified as UC
 
 shouldParseCS :: String -> CharSetAST -> Expectation
 shouldParseCS s = shouldParse (CS.normalize <$> parseCharSet s) . CS.normalize
@@ -53,6 +55,18 @@ spec = do
 
     specify "unclosed nested" $
       shouldFailCS "[ab"
+
+    specify "Unicode general category" $
+      "\\p{ Math_Symbol }" `shouldParseCS` CS.Chars (UC.generalCategoriesLong ! "Math_Symbol")
+
+    specify "Unicode general category abbr" $
+      "\\p{Sm}" `shouldParseCS` CS.Chars (UC.generalCategoriesAbbr ! "Sm")
+
+    specify "Unicode script" $
+      "\\p{Greek}" `shouldParseCS` CS.Chars (UC.scripts ! "Greek")
+
+    specify "Unicode block" $
+      "\\p{InLatin-1_Supplement}" `shouldParseCS` CS.Chars (UC.blocks ! "Latin-1 Supplement")
 
     describe "escaped chars" do
       specify "basic" $
@@ -130,7 +144,10 @@ spec = do
       "a[bc]d" `shouldParseRE` RE.concat ["a", RE.chars "bc", "d"]
 
     specify "charset splice" $
-      "[[:foo:]]" `shouldParseRE` RE.Chars (CS.Splice "foo")
+      "[:foo:]" `shouldParseRE` RE.Chars (CS.Splice "foo")
+
+    specify "Unicode property" $
+      "\\p{Greek}" `shouldParseRE` RE.Chars (CS.Chars (UC.scripts ! "Greek"))
 
     describe "empty" do
       specify "basic" $

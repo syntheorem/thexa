@@ -21,9 +21,10 @@ module Thexa.Regex.CharSet
 , delete
 , deleteRange
 
--- * Union and difference
+-- * Combining
 , union
 , difference
+, intersection
 , complement
 
 -- * Splits
@@ -46,8 +47,8 @@ import Text.Show (showsPrec)
 -- | A set of characters represented using an ordered list of non-overlapping ranges.
 data CharSet
   = Nil
-  | Cons {-# UNPACK #-} !Char -- lower bound
-         {-# UNPACK #-} !Char -- upper bound
+  | Cons {-# UNPACK #-} !Char -- lower bound (inclusive)
+         {-# UNPACK #-} !Char -- upper bound (inclusive)
          CharSet
   deriving (Eq, Ord, Lift)
 
@@ -55,7 +56,7 @@ data CharSet
 --
 -- 1. Each entry @Cons l u _@ in the list represents a non-empty range, so @l <= u@.
 --
--- 2. The list is sorted, so for @Cons l1 u1 (Cons l2 u2 _)@, @l1 <= l2@.
+-- 2. The list is sorted, so for @Cons l1 u1 (Cons l2 u2 _)@, @l1 < l2@.
 --
 -- 3. Adjacent ranges are not mergeable into a single range containing exactly the union of both
 -- ranges, so for @Cons l1 u1 (Cons l2 u2 _)@, @l2 > u1 + 1@.
@@ -163,9 +164,23 @@ difference cs1@(Cons l1 u1 tail1) cs2@(Cons l2 u2 tail2)
       LT -> difference tail1 cs2
       GT -> difference (Cons (succ u2) u1 tail1) tail2
 
+-- | Set intersection of two 'CharSet's.
+intersection :: CharSet -> CharSet -> CharSet
+intersection cs1 cs2 = difference cs1 (complement cs2)
+
 -- | Set complement of a 'CharSet'.
 complement :: CharSet -> CharSet
-complement = difference full
+complement = \case
+  Nil -> full
+  cs@(Cons l u tail)
+    | l == minBound && u == maxBound -> empty
+    | l == minBound -> go (succ u) tail
+    | otherwise     -> go minBound cs
+  where
+    go c Nil = Cons c maxBound Nil
+    go c (Cons l u tail)
+      | u == maxBound = Cons c (pred l) Nil
+      | otherwise     = Cons c (pred l) (go (succ u) tail)
 
 -- | Split a 'CharSet' into two.
 --

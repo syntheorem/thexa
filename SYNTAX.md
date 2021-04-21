@@ -22,7 +22,8 @@ Regular Expressions
 >>  ( _RegexAtom_ _RegexQuantifier_? )\* ( `|` _Regex_ )?
 >
 > **RegexAtom** :
->>  `(` _Regex_ `)` | `[` _CharSet_ `]` | _RegexChar_ | _RegexString_ | _RegexSplice_
+>>  `(` _Regex_ `)` | `[` _CharSet_ `]` | _RegexChar_ |
+>>  _RegexString_ | _UnicodePropertyEscape_ | _RegexSplice_ | _CharSetSplice_
 >
 > **RegexChar** :
 >>  _RegexEscape_ | \[^`(){}[]*+?|"\`\]
@@ -73,7 +74,7 @@ Character Sets
 >>  `^`? _CharSetAtom_\* | _CharSetAtom_\+ _CharSetDiff_?
 >
 > **CharSetAtom** :
->>  `[` _CharSet_ `]` | _CharSetRange_ | _CharSetChar_ | _CharSetSplice_
+>>  `[` _CharSet_ `]` | _CharSetRange_ | _CharSetChar_ | _UnicodePropertyEscape_ | _CharSetSplice_
 >
 > **CharSetChar** :
 >>  _CharSetEscape_ | \[^`[]^-\`\]
@@ -133,7 +134,7 @@ These special escapes map to particular characters:
 >>  `VT` | `FF` | `CR` | `SO` | `SI` | `DLE` | `DC1` | `DC2` | `DC3` | `DC4` | `NAK` | \
 >>  `SYN` | `ETB` | `CAN` | `EM` | `SUB` | `ESC` | `FS` | `GS` | `RS` | `US` | `DEL`
 
-Any ASCII control code (code points `0x0`-`0x1F`, `0x7F`) can be escaped using the shorthand name of the control code between `\x{` and `}`. Note that there can be no whitespace in the `\x{` token, but whitespace is ignored between the braces as long as it comes before or after the **AsciiControlCode** token.
+Any ASCII control code (code points `0x0`-`0x1F`, `0x7F`) can be escaped using the abbreviation of the control code between `\x{` and `}`. Note that there can be no whitespace in the `\x{` token, but whitespace is ignored between the braces as long as it comes before or after the **AsciiControlCode** token.
 
 > **AsciiEscape** :
 >>  `\x` _HexDigit_ _HexDigit_
@@ -150,6 +151,20 @@ Similarly to the **ControlCodeEscape**, there can be no whitespace in the `\u{` 
 
 A shorthand version of this is available for code points in the range `0x0`-`0xFF`. It uses `\x` followed by exactly two hexadecimal digits (this is parsed as a single token, so no whitespace is allowed within it). This is called an **AsciiEscape** because it has enough range to express any ASCII character (i.e., the Basic Latin block in Unicode), but it can also be used for characters in the Latin-1 Supplement block.
 
+> **UnicodePropertyEscape** :
+>>  `\p{` _UnicodeProperty_ `}`
+>
+> **UnicodeProperty** :
+>>  [`a`-`z` `A`-`Z` `0`-`9` `_` `-`]\+
+
+Entire sets of Unicode characters can be matched based on some property that they satisfy. The following properties are supported:
+
+- **General_Category**: the property can be the name of a Unicode General Category. Both the long and abbreviated names from the [General Category Table](http://www.unicode.org/reports/tr44/tr44-14.html#GC_Values_Table) are supported. So to match characters in the Math Symbol category, you would write `\p{Math_Symbol}` or `\p{Sm}`. The specific code points for each category are taken from the [DerivedGeneralCategory](unicode/DerivedGeneralCategory.txt) file.
+
+- **Script**: the property can be the name of a Unicode Script. So to match any Greek character, you would write `\p{Greek}`. The specific names and code points for each script are taken from the [Scripts](unicode/Scripts.txt) file.
+
+- **Block**: the property can begin with `In` followed by the name of a Unicode Block, except with spaces replaced by underscores. So to match any character in the Latin-1 Supplement block, you would write `\p{InLatin-1_Supplement}`. The specific names and code points for each block are taken from the [Blocks](unicode/Blocks.txt) file.
+
 Splices
 -------
 
@@ -163,15 +178,20 @@ When creating a lexer, it can be useful to factor out common portions of a regex
 
 The **HaskellVar** production corresponds to the **qvarid** production in the (Haskell syntax reference)[https://www.haskell.org/onlinereport/haskell2010/haskellch10.html], and can therefore be qualified with a module name.
 
-The variable must have the type `Regex` or `CharSet` when used in a **RegexSplice** or **CharSetSplice**, respectively. Note that this means that a `CharSet` variable cannot be spliced directly into a regex using the **RegexSplice** syntax, but must instead be enclosed in an extra pair of brackets, like `[[:charSetVar:]]`. This syntax was chosen to resemble POSIX character classes in other regex syntaxes.
+The variable must have the type `Regex` or `CharSet` when used in a **RegexSplice** or **CharSetSplice**, respectively. Note that this means that a `CharSet` variable cannot be spliced directly into a regex using the **RegexSplice** syntax, but must use the **CharSetSplice** syntax. This syntax was chosen to resemble POSIX character classes in other regex syntaxes.
 
 Note that the splice delimiters are parsed as a single token, and thus cannot have whitespace between the two characters. Additionally, in accordance with the **qvarid** production, there can be no whitespace inside the **HaskellVar**; all other whitespace between the delimiters is ignored as usual.
 
-Finally, there is an ambiguity between the **CharSetSplice** syntax and a bracketed **CharSet** beginning with `:`. TODO: FINISH THIS EXPLANATION
+Finally, there is an ambiguity between the **CharSetSplice** syntax and a **CharSet** beginning with `:` (e.g., in `[:]`). This is resolved in favor of treating `[:` as a single token that begins a splice, so whitespace must be used to split up the token (like `[ : ]`).
 
 Omissions
 ---------
 
 As is typical for a lexer, these regexes are intended to be compiled into a simple finite state machine, and don't support more advanced regex features such as lookahead, lookbehind, capture groups, or backreferences. This includes other features that rely on lookahead or lookbehind, such as matching the beginning or end of a line with `^` or `$`, or using `\b` to match word boundaries.
 
-There are also no built-in character classes such as `\s` or `[[:space:]]` to match whitespace characters. These are intended to be replaced by splices, and as such some common character classes are included in the `Thexa.CharClass` module as `CharSet` variables. Note also that `.` matches a literal period character rather than any character (or any non-newline character, depending on the regex engine settings). To match any character, use `[^]` (or `[^\n]`) instead.
+There are also no built-in character classes such as `\s` or `[[:space:]]` to match whitespace characters. These are intended to be replaced by splices, and as such some common character classes are included in the `Thexa.CharClass` module as `CharSet` variables. Note also that `.` matches a literal period character rather than matching any character (or any non-newline character, depending on the regex engine settings). To match any character, use `[^]` (or `[^\n]`) instead.
+
+Future Work
+-----------
+
+- Allow intersections in **CharSet** via the `&&` operator.

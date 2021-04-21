@@ -133,6 +133,9 @@ spec = do
     prop "(difference x y) is valid" $
       \x y -> validRangeSet (CS.difference x y)
 
+    prop "complement x == difference full x" $
+      \x -> CS.complement x === CS.difference CS.full x
+
   describe "splitLE" do
     prop "uncurry union . splitLE c == id" $
       \c rs -> uncurry CS.union (CS.splitLE c rs) === rs

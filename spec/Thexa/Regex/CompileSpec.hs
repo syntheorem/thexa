@@ -14,7 +14,6 @@ import Thexa.DFA qualified as DFA
 import Thexa.NFA (NFA, MatchKey, MatchSet)
 import Thexa.NFA qualified as NFA
 import Thexa.Regex (Regex, CharSet, re)
-import Thexa.Regex qualified as RE
 import Thexa.Regex.AST qualified as RE
 import Thexa.Regex.CharSet qualified as CS
 import Thexa.Regex.Compiler qualified as RE
@@ -159,6 +158,18 @@ spec = modifyMaxSuccess (max 1000) do
   describeRegex "\\u{FF}a\\u{FFFF}b"
     ["\xFF\&a\xFFFF\&b"]
     ["", "\xFF", "\xFF\&a", "a", "\xFFFF", "ba\xFFFF", "a\xFFFF\&b"]
+
+  describeRegex "\\p{Sm}"
+    ["÷", "×"]
+    ["", "a", " "]
+
+  describeRegex "\\p{Greek}"
+    ["δ", "Φ"]
+    ["", "a", " "]
+
+  describeRegex "\\p{InBasic_Latin}"
+    ["a", "\n", " ", "1"]
+    ["", "÷", "Φ"]
 
   describeRegexes "multiple regexes"
     [ ("a+"   , ["a", "aa"])

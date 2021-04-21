@@ -8,10 +8,14 @@ build-type:     Simple
 extra-doc-files:
   SYNTAX.md
 
+extra-source-files:
+  unicode/*.txt
+
 common deps
   build-depends:
       base >=4.8 && <5
     , containers
+    , file-embed
     , hashable
     , hashtables
     , megaparsec
@@ -116,6 +120,9 @@ library
     Thexa.Regex.Compiler
     Thexa.Regex.Parser
     Thexa.Regex.QuasiQuoters
+    Thexa.Regex.Unicode
+    Thexa.Regex.Unicode.Grapheme
+    Thexa.Regex.Unicode.Parser
 
 test-suite spec
   import: deps, lang, exe-opts
