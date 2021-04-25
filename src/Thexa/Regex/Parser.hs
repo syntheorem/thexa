@@ -25,7 +25,7 @@ import Thexa.Regex.AST (RegexAST)
 import Thexa.Regex.AST qualified as RE
 import Thexa.Regex.CharSet.AST (CharSetAST)
 import Thexa.Regex.CharSet.AST qualified as CS
-import Thexa.Regex.Unicode qualified as UC
+import Thexa.Regex.Unicode.Properties qualified as UC
 
 type Parser = P.Parsec Void String
 

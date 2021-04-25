@@ -20,4 +20,3 @@ module Thexa.Lexer
 ) where
 
 import Thexa.Lexer.Core
-import Thexa.Lexer.TH

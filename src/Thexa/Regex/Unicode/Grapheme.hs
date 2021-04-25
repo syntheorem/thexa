@@ -1,10 +1,11 @@
 module Thexa.Regex.Unicode.Grapheme where
 
 import PreludePrime
-
 import Data.Map ((!))
+
 import Thexa.Regex (Regex, re)
-import Thexa.Regex.Unicode (graphemeBreakProps, emojiProps)
+import Thexa.Regex.Unicode.Properties (PropertyMap)
+import Thexa.Regex.Unicode.Parser (readUnicodeDataFile)
 
 -- | A regular expression that matches a single extended grapheme cluster as defined by the Unicode
 -- standard.
@@ -47,4 +48,10 @@ grapheme = [re| \r\n | [[:control:]\r\n] | {{precore}}* {{core}} {{postcore}}* |
     lv          = graphemeBreakProps ! "LV"
     lvt         = graphemeBreakProps ! "LVT"
 
-    extPicto = emojiProps ! "Extended_Pictograph"
+    extPicto = emojiProps ! "Extended_Pictographic"
+
+graphemeBreakProps :: PropertyMap
+graphemeBreakProps = $$(readUnicodeDataFile "unicode/GraphemeBreakProperty.txt")
+
+emojiProps :: PropertyMap
+emojiProps = $$(readUnicodeDataFile "unicode/emoji-data.txt")

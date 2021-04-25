@@ -77,7 +77,7 @@ step DFA{..} (Node i) b
   where
     n  = sizeofArray matchArr
     i' = fromIntegral (indexPrimArray nodeArr (256*i + fromIntegral b))
-{-# INLINE step #-}
+{-# INLINABLE step #-}
 
 matches :: DFA ix -> Node -> MatchSet
 matches DFA{..} (Node i)
@@ -85,4 +85,4 @@ matches DFA{..} (Node i)
   | otherwise       = indexArray matchArr i
   where
     n = sizeofArray matchArr
-{-# INLINE matches #-}
+{-# INLINABLE matches #-}

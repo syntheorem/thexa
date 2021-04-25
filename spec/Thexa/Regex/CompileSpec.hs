@@ -16,7 +16,7 @@ import Thexa.NFA qualified as NFA
 import Thexa.Regex (Regex, CharSet, re)
 import Thexa.Regex.AST qualified as RE
 import Thexa.Regex.CharSet qualified as CS
-import Thexa.Regex.Compiler qualified as RE
+import Thexa.Regex.Compiler (compileRegexes)
 import Thexa.Regex.Parser qualified as RE
 
 -- We want to run every test against all possible representations of the DFA. Although this would be
@@ -39,7 +39,7 @@ compile1 regex = compile [(regex, 0)]
 compile :: [(Regex, MatchKey)] -> CompiledRegex
 compile regexes = CR {..}
   where
-    nfa = RE.compile regexes
+    nfa = compileRegexes regexes
     dense = DFA.denseFromNFA nfa
     offset = DFA.offsetFromNFA nfa
     sparse = DFA.sparseFromNFA nfa

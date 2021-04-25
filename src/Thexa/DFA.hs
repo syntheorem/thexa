@@ -1,3 +1,10 @@
+-- TODO: after benchmarking, consider the following options:
+-- 1. get rid of the whole IntLike thing, just use Map and Set instead
+-- 2. don't bother with match arrays, just do NodeMap MatchSet instead
+-- 3. get rid of Sparse, Offset seems to be better anyway
+-- 4. change Offset transitions to use 2 PrimArrays for faster lifting
+-- 5. use Storable Vector instead of PrimArray so we can use static pointers when lifting
+
 module Thexa.DFA
 ( DFA(..)
 , Node
@@ -10,6 +17,10 @@ module Thexa.DFA
 , step
 , matches
 , prettyPrint
+
+-- TODO: remove or flesh these out
+, Stats(..)
+, computeStats
 ) where
 
 import PreludePrime
@@ -258,9 +269,10 @@ data Stats = Stats
   , statSizeOfSparse :: Int
   , statSizeOfDense :: Int
   }
+  deriving (Show)
 
-computeStats :: SimpleDFA -> Stats
-computeStats dfa = Stats
+computeStats :: DFA -> Stats
+computeStats (toSimple -> dfa) = Stats
   { statNodeCount = n
   , statBytesPerNodeIndexSparse = sparseIxBytes
   , statBytesPerNodeIndexDense = denseIxBytes

@@ -22,7 +22,7 @@ common deps
     , mtl
     , prelude-prime
     , primitive
-    , template-haskell
+    , template-haskell >=2.16
 
 common lang
   default-language: Haskell2010
@@ -108,8 +108,9 @@ library
     Thexa.IntLike.Class
     Thexa.IntLike.Map
     Thexa.IntLike.Set
+    Thexa.Lexer
     Thexa.Lexer.Core
-    Thexa.Lexer.TH
+    Thexa.Lexer.Position
     Thexa.NFA
     Thexa.Orphans
     Thexa.PrimMap
@@ -123,6 +124,7 @@ library
     Thexa.Regex.Unicode
     Thexa.Regex.Unicode.Grapheme
     Thexa.Regex.Unicode.Parser
+    Thexa.Regex.Unicode.Properties
 
 test-suite spec
   import: deps, lang, exe-opts
@@ -156,3 +158,13 @@ benchmark bench
   build-depends:
       thexa
     , criterion
+
+executable CompileGrapheme
+  import: deps, lang, exe-opts
+  scope: private
+
+  hs-source-dirs: exe
+  main-is: CompileGrapheme.hs
+  build-depends:
+      thexa
+    , compact

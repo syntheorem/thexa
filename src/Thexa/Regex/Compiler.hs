@@ -1,5 +1,6 @@
 module Thexa.Regex.Compiler
-( compile
+( compileRegexes
+, compileRegex
 ) where
 
 import PreludePrime
@@ -16,8 +17,14 @@ import Thexa.Regex.CharSet qualified as CS
 import Thexa.NFA (NFA, ByteMap)
 import Thexa.NFA qualified as NFA
 
-compile :: [(Regex, NFA.MatchKey)] -> NFA
-compile = NFA.execBuild . traverse_ (uncurry buildRegexMatch)
+-- | Compile a list of 'Regex'es into a single 'NFA'. The match node for each regex will use the
+-- 'NFA.MatchKey' that it is paired with.
+compileRegexes :: [(Regex, NFA.MatchKey)] -> NFA
+compileRegexes = NFA.execBuild . traverse_ (uncurry buildRegexMatch)
+
+-- | Compile a single 'Regex' into an 'NFA'. Its match node will use @0@ as the 'NFA.MatchKey'.
+compileRegex :: Regex -> NFA
+compileRegex re = compileRegexes [(re, 0)]
 
 -- | Return type of a function that recursively builds an NFA from a regex. Takes the starting node
 -- as input and returns the ending node after building the regex into the NFA.

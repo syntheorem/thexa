@@ -55,7 +55,7 @@ step (DFA arr) (Node i) b
   where
     n  = sizeofArray arr
     ts = transitions (indexArray arr i)
-{-# INLINE step #-}
+{-# INLINABLE step #-}
 
 matches :: DFA ix -> Node -> MatchSet
 matches (DFA arr) (Node i)
@@ -63,4 +63,4 @@ matches (DFA arr) (Node i)
   | otherwise       = matchSet (indexArray arr i)
   where
     n = sizeofArray arr
-{-# INLINE matches #-}
+{-# INLINABLE matches #-}

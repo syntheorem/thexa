@@ -81,7 +81,7 @@ step (DFA arr) (Node i) b
     off = transOffset ent
     ent = indexArray arr i
     i'  = fromIntegral (indexPrimArray ts (bi - off))
-{-# INLINE step #-}
+{-# INLINABLE step #-}
 
 matches :: DFA ix -> Node -> MatchSet
 matches (DFA arr) (Node i)
@@ -89,4 +89,4 @@ matches (DFA arr) (Node i)
   | otherwise       = matchSet (indexArray arr i)
   where
     n = sizeofArray arr
-{-# INLINE matches #-}
+{-# INLINABLE matches #-}
