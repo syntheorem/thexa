@@ -29,14 +29,15 @@ import Control.Monad.Reader (ReaderT, runReaderT, ask, asks, lift)
 import Control.Monad.ST (ST, runST)
 import Data.HashTable.ST.Basic qualified as HT
 import Data.List (zip)
-import Data.Primitive.Array
+import Data.Vector qualified as V
+import Data.Vector.Mutable qualified as MV
 import Foreign (Ptr, sizeOf)
 import Language.Haskell.TH.Syntax (Lift)
 import Numeric (showHex)
 
 import Thexa.IntLike.Map qualified as ILMap
 import Thexa.IntLike.Set qualified as ILSet
-import Thexa.GrowArray qualified as GA
+import Thexa.GrowVector qualified as GV
 import Thexa.NFA (NFA)
 import Thexa.NFA qualified as NFA
 
@@ -89,7 +90,7 @@ denseFromNFA nfa
   | n < maxNodes32 = Dense32 (Dense.fromSimple simple)
   | otherwise      = error "too many nodes to fit in memory"
   where
-    n = sizeofArray simple
+    n = V.length simple
     simple = simpleFromNFA nfa
 
 -- | Construct a DFA from an NFA using the offset representation.
@@ -101,7 +102,7 @@ offsetFromNFA nfa
   | n < maxNodes32 = Offset32 (Offset.fromSimple simple)
   | otherwise      = error "too many nodes to fit in memory"
   where
-    n = sizeofArray simple
+    n = V.length simple
     simple = simpleFromNFA nfa
 
 -- | Construct a DFA from an NFA using the sparse representation.
@@ -111,7 +112,7 @@ sparseFromNFA nfa
   | n <= maxNodes32 = Sparse32 (Sparse.fromSimple simple)
   | otherwise       = error "too many nodes to fit in memory"
   where
-    n = sizeofArray simple
+    n = V.length simple
     simple = simpleFromNFA nfa
 
 -- | The start node which each DFA is initialized with.
@@ -167,7 +168,7 @@ maxNodes = fromIntegral (fromIntegral (maxBound @Int) :: a)
 type Build s = ReaderT (BuildState s) (ST s)
 
 data BuildState s = BS
-  { bsNodeArray :: {-# UNPACK #-} !(GA.GrowArray s (Either NFA.NodeSet (MatchSet, ByteMap Node)))
+  { bsNodeArray :: {-# UNPACK #-} !(GV.GrowVector s (Either NFA.NodeSet (MatchSet, ByteMap Node)))
   -- ^ Array of DFA nodes. When we first create a node, we store the set of NFA nodes that it
   -- represents. Then we eventually process each node to compute its match set and its transitions
   -- to other DFA nodes, so that when we're done every element of the array is 'Right'.
@@ -179,49 +180,49 @@ data BuildState s = BS
 
 simpleFromNFA :: NFA -> SimpleDFA
 simpleFromNFA nfa = runST do
-  bs <- BS <$> GA.new <*> HT.new
+  bs <- BS <$> GV.new <*> HT.new
 
   flip runReaderT bs do
     _ <- lookupNode (NFA.startNodes nfa)
     processNodes 0 nfa
 
   let nodes = bsNodeArray bs
-  len <- GA.length nodes
-  arr <- newArray len (error "uninitialized array element")
+  len <- GV.length nodes
+  vec <- MV.new len
 
   for_ [0..len-1] \i -> do
-    GA.read nodes i >>= \case
+    GV.read nodes i >>= \case
       Left  _ -> error "somehow failed to process a node"
-      Right x -> writeArray arr i x
+      Right x -> MV.write vec i x
 
-  unsafeFreezeArray arr
+  V.unsafeFreeze vec
 
 -- | Traverse the node array, computing the transitions for each node. When computing the
 -- transitions we may create new nodes and add them to the array, so we keep going until there are
 -- no unprocessed nodes left.
 processNodes :: Int -> NFA -> Build s ()
 processNodes i nfa = do
-  arr <- asks bsNodeArray
-  len <- GA.length arr
+  vec <- asks bsNodeArray
+  len <- GV.length vec
 
   unless (i >= len) do
-    GA.read arr i >>= \case
+    GV.read vec i >>= \case
       Right _    -> error "somehow reached already processed node"
       Left nodes -> do
         let trans = NFA.stepAll nfa nodes
         trans' <- traverse lookupNode trans
-        GA.write arr i (Right (NFA.matches nfa nodes, trans'))
+        GV.write vec i (Right (NFA.matches nfa nodes, trans'))
         processNodes (i + 1) nfa
 
 -- | Lookup the node corresponding to a set of NFA nodes, or create it if it doesn't exist.
 lookupNode :: NFA.NodeSet -> Build s Node
 lookupNode nodes = do
-  BS{bsNodeArray = arr, bsNodeTable = tbl} <- ask
+  BS{bsNodeArray = vec, bsNodeTable = tbl} <- ask
   lift $ HT.mutateST tbl nodes \case
     Just n  -> pure (Just n, n)
     Nothing -> do
-      n <- Node <$> GA.length arr
-      GA.push arr (Left nodes)
+      n <- Node <$> GV.length vec
+      GV.push vec (Left nodes)
       pure (Just n, n)
 
 ---------------
@@ -283,7 +284,7 @@ computeStats (toSimple -> dfa) = Stats
   , statSizeOfDense = denseSize
   }
   where
-    n = sizeofArray dfa
+    n = V.length dfa
     sparseIxBytes
       | n <= maxNodes16 = 2
       | n <= maxNodes32 = 4

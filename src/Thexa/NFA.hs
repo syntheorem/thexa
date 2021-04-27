@@ -44,11 +44,11 @@ import PreludePrime
 
 import Control.Monad.ST (ST, runST)
 import Data.List (zip)
-import Data.Primitive.Array
 import Data.Primitive.MutVar
+import Data.Vector qualified as V
 import Numeric (showHex)
 
-import Thexa.GrowArray qualified as GA
+import Thexa.GrowVector qualified as GV
 import Thexa.IntLike.Class (IntLike)
 import Thexa.IntLike.Map qualified as ILMap
 import Thexa.IntLike.Set qualified as ILSet
@@ -65,7 +65,7 @@ import Thexa.IntLike.Set qualified as ILSet
 -- (a.k.a. end nodes) that indicate a successful match when they are reached. Each match node is
 -- associated with a 'MatchKey'.
 data NFA = NFA
-  { nfaTransitions :: {-# UNPACK #-} !(Array Transitions)
+  { nfaTransitions :: {-# UNPACK #-} !(V.Vector Transitions)
   , nfaMatchNodes  :: !(NodeMap MatchKey)
   }
 
@@ -111,7 +111,7 @@ startNode = Node 0
 
 -- | The number of nodes in the NFA.
 nodeCount :: NFA -> Int
-nodeCount = sizeofArray . nfaTransitions
+nodeCount = V.length . nfaTransitions
 
 -- | The set of match nodes of an NFA and their associated 'MatchKey's.
 matchNodes :: NFA -> NodeMap MatchKey
@@ -119,11 +119,7 @@ matchNodes = nfaMatchNodes
 
 -- | The 'Transitions' for a given node in the NFA.
 transitions :: NFA -> Node -> Transitions
-transitions NFA{nfaTransitions = arr} (Node i)
-  | i < 0 || i >= n = error ("invalid node ("<>show (Node i)<>")")
-  | otherwise       = indexArray arr i
-  where
-    n = sizeofArray arr
+transitions nfa (Node i) = (V.!) (nfaTransitions nfa) i
 
 -- | Set of nodes we can transition to from the given node after consuming the given byte, excluding
 -- subsequent epsilon transitions.
@@ -201,7 +197,7 @@ instance Monad Build where
   Build ma >> Build mb = Build \bs -> ma bs >> mb bs
 
 data BuildState s = BS
-  { bsTransitions :: {-# UNPACK #-} !(GA.GrowArray s Transitions)
+  { bsTransitions :: {-# UNPACK #-} !(GV.GrowVector s Transitions)
   -- ^ Array of node transitions. A node is represented by its index into this array.
   , bsMatchNodes  :: {-# UNPACK #-} !(MutVar s (NodeMap MatchKey))
   -- ^ Set of nodes which represent a successful match in the NFA. Each match node is associated
@@ -217,15 +213,15 @@ runBuild b = runST do
   a <- ma bs
 
   -- Convert state to immutable NFA
-  arr <- GA.freeze (bsTransitions bs)
+  vec <- GV.unsafeFreeze (bsTransitions bs)
   mNodes <- readMutVar (bsMatchNodes bs)
-  pure (a, NFA{nfaTransitions = arr, nfaMatchNodes = mNodes})
+  pure (a, NFA{nfaTransitions = vec, nfaMatchNodes = mNodes})
   where
     initBuildState :: ST s (BuildState s)
     initBuildState = do
-      arr <- GA.new
+      vec <- GV.new
       var <- newMutVar ILMap.empty
-      pure BS{bsTransitions = arr, bsMatchNodes = var}
+      pure BS{bsTransitions = vec, bsMatchNodes = var}
 
 -- | Like 'runBuild', but ignoring the result of the build action.
 execBuild :: Build () -> NFA
@@ -233,9 +229,9 @@ execBuild = snd . runBuild
 
 -- | Add a new node to the NFA. Initially has no transitions.
 newNode :: Build Node
-newNode = Build \BS{bsTransitions = arr} -> do
-  n <- GA.length arr
-  GA.push arr $! Transitions ILSet.empty ILMap.empty
+newNode = Build \BS{bsTransitions = vec} -> do
+  n <- GV.length vec
+  GV.push vec $! Transitions ILSet.empty ILMap.empty
   pure (Node n)
 
 -- | Add a new match node to the NFA and associate it with the given MatchKey.
@@ -268,7 +264,7 @@ addEpsilonTransition from to = modifyTransitions from \ts ->
 
 modifyTransitions :: Node -> (Transitions -> Transitions) -> Build ()
 modifyTransitions (Node from) f = Build \bs -> do
-  GA.modify' (bsTransitions bs) from f
+  GV.modify' (bsTransitions bs) from f
 {-# INLINE modifyTransitions #-}
 
 ---------------

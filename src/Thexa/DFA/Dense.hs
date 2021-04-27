@@ -9,9 +9,11 @@ module Thexa.DFA.Dense
 import PreludePrime
 
 import Control.Monad.ST (runST)
-import Data.Primitive.Array
-import Data.Primitive.PrimArray
-import Data.Primitive.Types (Prim)
+import Data.Vector qualified as V
+import Data.Vector.Mutable qualified as MV
+import Data.Vector.Storable qualified as SV
+import Data.Vector.Storable.Mutable qualified as SMV
+import Foreign.Storable (Storable)
 import Language.Haskell.TH.Syntax (Lift)
 
 import Thexa.DFA.Types
@@ -19,70 +21,65 @@ import Thexa.IntLike.Map qualified as ILMap
 import Thexa.Orphans ()
 
 data DFA ix = DFA
-  { nodeArr  :: {-# UNPACK #-} !(PrimArray ix)
-  , matchArr :: {-# UNPACK #-} !(Array MatchSet)
+  { nodesVec  :: {-# UNPACK #-} !(SV.Vector ix)
+  , matchVec :: {-# UNPACK #-} !(V.Vector MatchSet)
   }
   deriving (Lift)
 
 instance NFData (DFA ix) where
-  rnf (DFA _ arr) = rnf arr
+  rnf (DFA _ vec) = rnf vec
 
-fromSimple :: (Prim ix, Integral ix) => SimpleDFA -> DFA ix
-fromSimple arr = runST do
-  let n = sizeofArray arr
+fromSimple :: (Storable ix, Integral ix) => SimpleDFA -> DFA ix
+fromSimple vec = runST do
+  let n = V.length vec
   let noMatch = fromIntegral n
 
-  nodesArr <- newPrimArray (n * 256)
-  matchArr <- newArray n (error "uninitialized array element")
+  nodesVec <- SMV.new (n * 256)
+  matchVec <- MV.new n
 
   for_ [0..(n - 1)] \i -> do
-    (ms, bm) <- indexArrayM arr i
-    writeArray matchArr i $! ms
+    (ms, bm) <- V.indexM vec i
+    MV.write matchVec i $! ms
     for_ [0..255] \b -> do
       let bi = 256*i + fromIntegral b
       case ILMap.lookup b bm of
-        Just (Node ni) -> writePrimArray nodesArr bi (fromIntegral ni)
-        Nothing        -> writePrimArray nodesArr bi noMatch
+        Just (Node ni) -> SMV.write nodesVec bi (fromIntegral ni)
+        Nothing        -> SMV.write nodesVec bi noMatch
 
-  DFA <$> unsafeFreezePrimArray nodesArr <*> unsafeFreezeArray matchArr
+  DFA <$> SV.unsafeFreeze nodesVec <*> V.unsafeFreeze matchVec
 {-# INLINABLE fromSimple #-}
 
-toSimple :: (Prim ix, Integral ix) => DFA ix -> SimpleDFA
+toSimple :: (Storable ix, Integral ix) => DFA ix -> SimpleDFA
 toSimple DFA{..} = runST do
-  arr <- newArray n (error "uninitialized array element")
+  vec <- MV.new n
 
   for_ [0..(n - 1)] \i -> do
     let ts = filterMap (indexTrans i) [0..255]
-    ms <- indexArrayM matchArr i
-    writeArray arr i (ms, ILMap.fromDistinctAscList ts)
+    ms <- V.indexM matchVec i
+    MV.write vec i (ms, ILMap.fromDistinctAscList ts)
 
-  unsafeFreezeArray arr
+  V.unsafeFreeze vec
   where
-    n = sizeofArray matchArr
+    n = V.length matchVec
 
     indexTrans :: Int -> Word8 -> Maybe (Word8, Node)
     indexTrans i b
       | i' >= n   = Nothing
       | otherwise = Just (b, Node i')
       where
-        i' = fromIntegral (indexPrimArray nodeArr bi)
+        i' = fromIntegral ((SV.!) nodesVec bi)
         bi = 256*i + fromIntegral b
 {-# INLINABLE toSimple #-}
 
-step :: (Prim ix, Integral ix) => DFA ix -> Node -> Word8 -> Maybe Node
+step :: (Storable ix, Integral ix) => DFA ix -> Node -> Word8 -> Maybe Node
 step DFA{..} (Node i) b
-  | i < 0 || i >= n = error "invalid node"
   | i' >= n         = Nothing
   | otherwise       = Just (Node i')
   where
-    n  = sizeofArray matchArr
-    i' = fromIntegral (indexPrimArray nodeArr (256*i + fromIntegral b))
+    n  = V.length matchVec
+    i' = fromIntegral ((SV.!) nodesVec (256*i + fromIntegral b))
 {-# INLINABLE step #-}
 
 matches :: DFA ix -> Node -> MatchSet
-matches DFA{..} (Node i)
-  | i < 0 || i >= n = error "invalid node"
-  | otherwise       = indexArray matchArr i
-  where
-    n = sizeofArray matchArr
+matches DFA{..} (Node i) = (V.!) matchVec i
 {-# INLINABLE matches #-}

@@ -8,7 +8,7 @@ module Thexa.DFA.Types
 
 import PreludePrime
 
-import Data.Primitive.Array
+import Data.Vector (Vector)
 import Thexa.IntLike.Class (IntLike)
 import Thexa.NFA (MatchKey, MatchSet, ByteMap)
 
@@ -23,4 +23,4 @@ newtype Node = Node Int
 
 -- | Simple but inefficient representation of a DFA. This is used as sort of an interchange format,
 -- where we convert an NFA to a 'SimpleDFA' and then convert that to the actual DFA representation.
-type SimpleDFA = Array (MatchSet, ByteMap Node)
+type SimpleDFA = Vector (MatchSet, ByteMap Node)
