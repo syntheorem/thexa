@@ -1,24 +1,26 @@
+{-# OPTIONS_GHC -Wno-partial-type-signatures #-}
+
 -- TODO: after benchmarking, consider the following options:
 -- 1. get rid of the whole IntLike thing, just use Map and Set instead
--- 2. don't bother with match arrays, just do NodeMap MatchSet instead
--- 3. get rid of Sparse, Offset seems to be better anyway
--- 4. change Offset transitions to use 2 PrimArrays for faster lifting
--- 5. use Storable Vector instead of PrimArray so we can use static pointers when lifting
+-- 2. use NodeMap MatchSet or Vector MatchSet?
 
 module Thexa.DFA
-( DFA(..)
+( DFA
 , Node
 , MatchKey
 , MatchSet
-, denseFromNFA
-, offsetFromNFA
-, sparseFromNFA
+, fromNFA
 , startNode
 , step
 , matches
-, prettyPrint
 
--- TODO: remove or flesh these out
+-- * Representation of Transitions
+, Transitions
+, Dense
+, Sparse
+
+-- * Debugging
+, prettyPrint
 , Stats(..)
 , computeStats
 ) where
@@ -29,22 +31,22 @@ import Control.Monad.Reader (ReaderT, runReaderT, ask, asks, lift)
 import Control.Monad.ST (ST, runST)
 import Data.HashTable.ST.Basic qualified as HT
 import Data.List (zip)
+import Data.Primitive.MutVar
 import Data.Vector qualified as V
 import Data.Vector.Mutable qualified as MV
-import Foreign (Ptr, sizeOf)
+import Data.Vector.Storable qualified as SV
+import Data.Vector.Storable.Mutable qualified as SMV
+import Foreign.Storable (Storable(sizeOf, alignment, peek, poke, peekByteOff, pokeByteOff))
 import Language.Haskell.TH.Syntax (Lift)
 import Numeric (showHex)
 
+import Thexa.IntLike.Class (IntLike)
 import Thexa.IntLike.Map qualified as ILMap
 import Thexa.IntLike.Set qualified as ILSet
 import Thexa.GrowVector qualified as GV
-import Thexa.NFA (NFA)
+import Thexa.NFA (NFA, MatchKey, MatchSet, ByteMap)
 import Thexa.NFA qualified as NFA
-
-import Thexa.DFA.Types
-import Thexa.DFA.Dense qualified as Dense
-import Thexa.DFA.Offset qualified as Offset
-import Thexa.DFA.Sparse qualified as Sparse
+import Thexa.Orphans ()
 
 -- | Deterministic Finite Automaton with byte-labeled transitions.
 --
@@ -61,59 +63,45 @@ import Thexa.DFA.Sparse qualified as Sparse
 -- However, in the DFA generated for a typical lexer, most nodes don't have valid transitions for
 -- every possible byte of input, and in fact likely only accept a small subset of possible bytes.
 -- This means that the dense representation wastes a lot of space, which can be significant for a
--- large DFA. So there is also a *sparse* representation which essentially uses a map to lookup the
--- transitions for a node. This is somewhat slower but can potentially save a lot of memory,
--- although how much memory depends on the specific DFA.
+-- large DFA. So there is also a *sparse* representation which essentially uses an additional level
+-- of indirection to avoid storing the transition for every possible byte. This is somewhat slower
+-- but can potentially save a lot of memory, although how much memory depends on the specific DFA.
 --
--- TODO: describe offset representation
+-- There is another optimization which is available for both DFA representations. We probably don't
+-- need the full range of an @Int@ to represent the nodes, so we can save space by using a @Word16@
+-- or @Word32@, depending on the number of nodes in the DFA. There are no @Word8@ variants because
+-- at that point the DFA is very small anyway, and no @Word64@ variants because at that point the
+-- DFA is too large to reasonably fit into memory.
 --
--- There is another optimization which is performed for all DFA representations. We probably don't
--- need the full range of an @Int@ to represent the nodes, so we save space by using an @Int16@ or
--- @Int32@, depending on the number of nodes in the DFA. There are no @Int8@ variants because at
--- that point the DFA is very small anyway, and no @Int64@ variants because at that point the DFA is
--- too large to reasonably fit into memory.
-data DFA
-  = Dense16 !(Dense.DFA Word16)
-  | Dense32 !(Dense.DFA Word32)
-  | Offset16 !(Offset.DFA Word16)
-  | Offset32 !(Offset.DFA Word32)
-  | Sparse16 !(Sparse.DFA Word16)
-  | Sparse32 !(Sparse.DFA Word32)
-  deriving (Lift, Generic, NFData)
+-- This choice of representations is enabled by @DFA@'s type parameter, which should be an instance
+-- of the 'Transitions' class. Although this forces the representation to be selected at compile
+-- time, it allows the compiler to specialize the 'step' function to the specific representation
+-- used, which is important for performance. The main difficulty is not knowing whether the DFA has
+-- few enough nodes to use @Word16@ indices, which may require trial and error to determine.
+data DFA t = DFA !t !MatchNodes
+  deriving (Lift)
 
--- | Construct a DFA from an NFA using the dense representation.
-denseFromNFA :: NFA -> DFA
-denseFromNFA nfa
-  -- We need strictly less than because the dense DFA
-  -- uses an extra index to represent invalid transitions.
-  | n < maxNodes16 = Dense16 (Dense.fromSimple simple)
-  | n < maxNodes32 = Dense32 (Dense.fromSimple simple)
-  | otherwise      = error "too many nodes to fit in memory"
-  where
-    n = V.length simple
-    simple = simpleFromNFA nfa
+instance NFData t => NFData (DFA t) where
+  rnf (DFA t matchNodes) = rnf t `seq` rnf matchNodes
 
--- | Construct a DFA from an NFA using the offset representation.
-offsetFromNFA :: NFA -> DFA
-offsetFromNFA nfa
-  -- We need strictly less than because the offset DFA
-  -- uses an extra index to represent invalid transitions.
-  | n < maxNodes16 = Offset16 (Offset.fromSimple simple)
-  | n < maxNodes32 = Offset32 (Offset.fromSimple simple)
-  | otherwise      = error "too many nodes to fit in memory"
-  where
-    n = V.length simple
-    simple = simpleFromNFA nfa
+-- | A node (also called a state) of a DFA.
+--
+-- This is simply represented as an index into an array, so one must be careful to avoid mixing
+-- nodes from multiple DFAs. Functions in this module will throw an exception if there is an attempt
+-- to access a node with an index that is out of bounds.
+newtype Node = Node Int
+  deriving (Show)
+  deriving newtype (Eq, Ord, IntLike, NFData)
 
--- | Construct a DFA from an NFA using the sparse representation.
-sparseFromNFA :: NFA -> DFA
-sparseFromNFA nfa
-  | n <= maxNodes16 = Sparse16 (Sparse.fromSimple simple)
-  | n <= maxNodes32 = Sparse32 (Sparse.fromSimple simple)
-  | otherwise       = error "too many nodes to fit in memory"
+-- | Map of nodes to their non-empty match sets.
+type MatchNodes = ILMap.ILMap Node MatchSet
+
+-- | Convert an 'NFA' to a 'DFA'.
+fromNFA :: Transitions t => NFA -> DFA t
+fromNFA nfa = DFA trans matchNodes
   where
-    n = V.length simple
-    simple = simpleFromNFA nfa
+    (simple, matchNodes) = simpleFromNFA nfa
+    trans = transFromSimple simple
 
 -- | The start node which each DFA is initialized with.
 startNode :: Node
@@ -122,53 +110,37 @@ startNode = Node 0
 -- | Step the DFA simulation by feeding it the current node and the next byte of input. Returns the
 -- new node, or 'Nothing' if the current node doesn't have a transition for the given byte,
 -- indicating a failure to match the input.
-step :: DFA -> Node -> Word8 -> Maybe Node
-step = \case
-  Dense16  dfa -> Dense.step  dfa
-  Dense32  dfa -> Dense.step  dfa
-  Offset16 dfa -> Offset.step dfa
-  Offset32 dfa -> Offset.step dfa
-  Sparse16 dfa -> Sparse.step dfa
-  Sparse32 dfa -> Sparse.step dfa
+step :: Transitions t => DFA t -> Node -> Word8 -> Maybe Node
+step (DFA t _) = transStep t
 {-# INLINE step #-}
 
 -- | Lookup the matches for the given DFA node. The returned set is empty when the node is not a
 -- match node.
-matches :: DFA -> Node -> MatchSet
-matches = \case
-  Dense16  dfa -> Dense.matches  dfa
-  Dense32  dfa -> Dense.matches  dfa
-  Offset16 dfa -> Offset.matches dfa
-  Offset32 dfa -> Offset.matches dfa
-  Sparse16 dfa -> Sparse.matches dfa
-  Sparse32 dfa -> Sparse.matches dfa
+matches :: DFA t -> Node -> MatchSet
+matches (DFA _ matchNodes) = fromMaybe ILSet.empty . flip ILMap.lookup matchNodes
 {-# INLINE matches #-}
 
-maxNodes16 :: Int
-maxNodes16 = maxNodes @Word16
+-- | Simple but inefficient representation of DFA transitions. This is used as sort of an
+-- interchange format, where we convert an NFA to this and then convert that to the actual DFA
+-- representation.
+type Simple = V.Vector (ByteMap Node)
 
-maxNodes32 :: Int
-maxNodes32 = maxNodes @Word32
+-- | Class for types which can be used to represent 'DFA' transitions.
+class Transitions t where
+  transFromSimple :: Simple -> t
+  transToSimple :: t -> Simple
+  transStep :: t -> Node -> Word8 -> Maybe Node
+  transSize :: t -> Int
 
--- | The maximum number of representable nodes for the given unsigned index type.
---
--- This works by taking @maxBound :: Int@, converting it to the given type, then converting back.
--- This way, if @Int@ has a smaller bound, it will be losslessly converted and we'll get the @Int@
--- bound. If it has a larger bound, then it will be truncated to the bound for the given type.
---
--- Basically, the point is that it will work regardless of the number of bits in an @Int@.
-maxNodes :: forall a. Integral a => Int
-maxNodes = fromIntegral (fromIntegral (maxBound @Int) :: a)
-
-------------------------
--- Building SimpleDFA --
-------------------------
+---------------------------------
+-- Building Simple Transitions --
+---------------------------------
 
 -- | Monad in which we build the DFA.
 type Build s = ReaderT (BuildState s) (ST s)
 
 data BuildState s = BS
-  { bsNodeArray :: {-# UNPACK #-} !(GV.GrowVector s (Either NFA.NodeSet (MatchSet, ByteMap Node)))
+  { bsNodeArray :: {-# UNPACK #-} !(GV.GrowVector s (Either NFA.NodeSet (ByteMap Node)))
   -- ^ Array of DFA nodes. When we first create a node, we store the set of NFA nodes that it
   -- represents. Then we eventually process each node to compute its match set and its transitions
   -- to other DFA nodes, so that when we're done every element of the array is 'Right'.
@@ -176,11 +148,14 @@ data BuildState s = BS
   -- ^ Mapping from a set of NFA nodes to its corresponding DFA node. Since comparison of sets is
   -- relatively expensive, my intuition is that a hash table will perform better than an ordered
   -- map. However, benchmarks are needed to determine the optimal data structure here.
+  , bsMatchNodes :: {-# UNPACK #-} !(MutVar s MatchNodes)
+  -- ^ Map of match nodes to their respective MatchSets.
   }
 
-simpleFromNFA :: NFA -> SimpleDFA
+simpleFromNFA :: NFA -> (Simple, MatchNodes)
 simpleFromNFA nfa = runST do
-  bs <- BS <$> GV.new <*> HT.new
+  -- Initialize the BuildState
+  bs <- BS <$> GV.new <*> HT.new <*> newMutVar ILMap.empty
 
   flip runReaderT bs do
     _ <- lookupNode (NFA.startNodes nfa)
@@ -190,12 +165,15 @@ simpleFromNFA nfa = runST do
   len <- GV.length nodes
   vec <- MV.new len
 
+  -- Write node transitions into the new array, removing the Either constructor
   for_ [0..len-1] \i -> do
     GV.read nodes i >>= \case
       Left  _ -> error "somehow failed to process a node"
       Right x -> MV.write vec i x
 
-  V.unsafeFreeze vec
+  trans <- V.unsafeFreeze vec
+  matchNodes <- readMutVar (bsMatchNodes bs)
+  pure (trans, matchNodes)
 
 -- | Traverse the node array, computing the transitions for each node. When computing the
 -- transitions we may create new nodes and add them to the array, so we keep going until there are
@@ -209,9 +187,17 @@ processNodes i nfa = do
     GV.read vec i >>= \case
       Right _    -> error "somehow reached already processed node"
       Left nodes -> do
+        -- Compute transitions for this node
         let trans = NFA.stepAll nfa nodes
         trans' <- traverse lookupNode trans
-        GV.write vec i (Right (NFA.matches nfa nodes, trans'))
+        GV.write vec i (Right trans')
+
+        -- Add this node as a match node if applicable
+        let matchSet = NFA.matches nfa nodes
+        unless (ILSet.null matchSet) do
+          matchNodesVar <- asks bsMatchNodes
+          modifyMutVar' matchNodesVar (ILMap.insert (Node i) matchSet)
+
         processNodes (i + 1) nfa
 
 -- | Lookup the node corresponding to a set of NFA nodes, or create it if it doesn't exist.
@@ -225,19 +211,270 @@ lookupNode nodes = do
       GV.push vec (Left nodes)
       pure (Just n, n)
 
+-----------------------
+-- Dense Transitions --
+-----------------------
+
+-- | Dense 'DFA' transitions representation.
+newtype Dense ix = Dense (SV.Vector ix)
+  deriving (Lift)
+  deriving newtype (NFData)
+
+instance Transitions (Dense Word16) where
+  transToSimple = denseToSimple
+  transStep = denseStep
+  transSize = denseSize
+
+  transFromSimple simpleVec
+    | n <= 0xFFFF = denseFromSimple simpleVec
+    | otherwise   = error "too many nodes to use Word16 indices"
+    where n = V.length simpleVec
+
+instance Transitions (Dense Word32) where
+  transToSimple = denseToSimple
+  transStep = denseStep
+  transSize = denseSize
+
+  transFromSimple simpleVec
+    | n <= 0x7FFFFFFF = denseFromSimple simpleVec
+    | otherwise       = error "too many nodes to use Word32 indices"
+    where n = V.length simpleVec
+
+{-# INLINABLE denseFromSimple #-}
+denseFromSimple :: (Storable ix, Integral ix) => Simple -> Dense ix
+denseFromSimple simpleVec = runST do
+  let n = V.length simpleVec
+  let noMatch = fromIntegral n
+  denseVec <- SMV.new (n * 256)
+
+  for_ [0..(n - 1)] \i -> do
+    bm <- V.indexM simpleVec i
+    for_ [0..255] \b -> do
+      let bi = 256*i + fromIntegral b
+      case ILMap.lookup b bm of
+        Just (Node ni) -> SMV.write denseVec bi (fromIntegral ni)
+        Nothing        -> SMV.write denseVec bi noMatch
+
+  Dense <$> SV.unsafeFreeze denseVec
+
+{-# INLINABLE denseToSimple #-}
+denseToSimple :: (Storable ix, Integral ix) => Dense ix -> Simple
+denseToSimple (Dense denseVec) = runST do
+  vec <- MV.new n
+
+  for_ [0..(n - 1)] \i -> do
+    let ts = filterMap (indexTrans i) [0..255]
+    MV.write vec i (ILMap.fromDistinctAscList ts)
+
+  V.unsafeFreeze vec
+  where
+    n = SV.length denseVec `div` 256
+
+    indexTrans :: Int -> Word8 -> Maybe (Word8, Node)
+    indexTrans i b
+      | i' >= n   = Nothing
+      | otherwise = Just (b, Node i')
+      where
+        i' = fromIntegral ((SV.!) denseVec bi)
+        bi = 256*i + fromIntegral b
+
+{-# INLINABLE denseStep #-}
+denseStep :: (Storable ix, Integral ix) => Dense ix -> Node -> Word8 -> Maybe Node
+denseStep (Dense denseVec) (Node i) b
+  | i' >= n         = Nothing
+  | otherwise       = Just (Node i')
+  where
+    n  = SV.length denseVec `div` 256
+    i' = fromIntegral ((SV.!) denseVec (256*i + fromIntegral b))
+
+denseSize :: forall ix. Storable ix => Dense ix -> Int
+denseSize (Dense denseVec) = SV.length denseVec * sizeOf (undefined :: ix)
+
+------------------------
+-- Sparse Transitions --
+------------------------
+
+-- | Sparse 'DFA' transitions representation.
+data Sparse ix = Sparse
+  !(SV.Vector SparseNode)
+  -- ^ One entry for each node of the DFA. Each entry contains the information needed to lookup
+  -- transitions for that node in the transition vector.
+  --
+  -- Although using a storable vector should provide performance benefits, the primary reason is to
+  -- use the 'Lift' instance for storable vectors, which embeds the bytes directly into the program
+  -- binary rather than syntactically construct a large array which the compiler will then spend far
+  -- too much time attempting to optimize.
+  !(SV.Vector ix)
+  -- ^ Transition vector. Constructed by taking the dense transitions for each node (i.e., the
+  -- 256-element array with the transition for each byte) and trimming the invalid transitions off
+  -- the beginning and end. For example, if a node has valid transitions for 3 and 10, then we will
+  -- store 8 transitions (from 3 to 10) but 6 of them (from 4 to 9) will be marked as invalid.
+  --
+  -- We then concatenate these trimmed transition arrays into a single vector. So to lookup a
+  -- transition for a node, we need the offset of its transition array in this vector, the number of
+  -- elements trimmed off the start, and the length of the vector.
+  deriving (Lift)
+
+instance NFData (Sparse ix) where
+  rnf (Sparse v0 v1) = rnf v0 `seq` rnf v1
+
+-- | Node metadata telling us how to lookup the transitions. The fields are all 'Int', but this is
+-- essentially a lie because we actually store them as smaller 'Word' types. I originally had their
+-- types be accurate, but frankly all the integral type conversions added a lot of noise to the
+-- code, so instead I'm just doing the conversions in the 'Storable' instance.
+data SparseNode = SparseNode
+  {-# UNPACK #-} !Int
+  -- ^ Word32. Sparse of this node's transitions in the transition vector.
+  {-# UNPACK #-} !Int
+  -- ^ Word16. The number of transitions stored for this node. May be 0 for no valid transitions.
+  {-# UNPACK #-} !Int
+  -- ^ Word16. The number of invalid transitions that were trimmed off the front. This value is
+  -- irrelevant if the number of stored transitions is 0.
+
+instance Storable SparseNode where
+  sizeOf    _ = 8
+  alignment _ = 4
+
+  poke ptr (SparseNode x0 x1 x2) = do
+    pokeByteOff @Word32 ptr 0 (fromIntegral x0)
+    pokeByteOff @Word16 ptr 4 (fromIntegral x1)
+    pokeByteOff @Word16 ptr 6 (fromIntegral x2)
+
+  peek ptr = do
+    x0 <- fromIntegral <$> peekByteOff @Word32 ptr 0
+    x1 <- fromIntegral <$> peekByteOff @Word16 ptr 4
+    x2 <- fromIntegral <$> peekByteOff @Word16 ptr 6
+    pure (SparseNode x0 x1 x2)
+
+instance Transitions (Sparse Word16) where
+  transToSimple = sparseToSimple
+  transStep = sparseStep
+  transSize = sparseSize
+
+  transFromSimple simpleVec
+    | n <= 0xFFFF = sparseFromSimple simpleVec
+    | otherwise   = error "too many nodes to use Word16 indices"
+    where n = V.length simpleVec
+
+instance Transitions (Sparse Word32) where
+  transToSimple = sparseToSimple
+  transStep = sparseStep
+  transSize = sparseSize
+
+  transFromSimple simpleVec
+    | n <= 0x7FFFFFFF = sparseFromSimple simpleVec
+    | otherwise       = error "too many nodes to use Word32 indices"
+    where n = V.length simpleVec
+
+{-# INLINABLE sparseFromSimple #-}
+sparseFromSimple :: (Storable ix, Integral ix) => Simple -> Sparse ix
+sparseFromSimple simpleVec = runST do
+  let nNodes = V.length simpleVec
+  let noMatch = fromIntegral nNodes
+  nodesVec <- SMV.new nNodes
+
+  -- We fold over the nodes twice. The first time, we determine the length of the trimmed transition
+  -- array for each node, which we use to populate nodesVec and accumulate the length of the final
+  -- transition vector.
+  let go1 :: Int -> Int -> ByteMap Node -> ST _ Int
+      go1 transVecLen nodeIdx transMap = do
+        let (transLen, byteOff) = transLengthAndOffset transMap
+        SMV.write nodesVec nodeIdx $ SparseNode transVecLen transLen byteOff
+        pure (transVecLen + transLen)
+
+  transVecLen <- V.ifoldM' go1 0 simpleVec
+
+  when (transVecLen > 0x7FFFFFFF) do
+    errorM "too many transitions for Word32 offsets"
+
+  transVec <- SMV.new transVecLen
+
+  -- For the second fold, we populate the transition vector with the actual transitions for each
+  -- node, again accumulating the length of the transition vector so far.
+  let go2 :: Int -> ByteMap Node -> ST _ Int
+      go2 transVecIdx transMap = do
+        let (transLen, byteOff) = transLengthAndOffset transMap
+
+        for_ [0..transLen-1] \i -> do
+          let b = fromIntegral (i + byteOff) :: Word8
+          let ix = case ILMap.lookup b transMap of
+                Just (Node n) -> fromIntegral n
+                Nothing -> noMatch
+
+          SMV.write transVec (transVecIdx + i) ix
+
+        pure (transVecIdx + transLen)
+
+  V.foldM'_ go2 0 simpleVec
+
+  Sparse <$> SV.unsafeFreeze nodesVec
+         <*> SV.unsafeFreeze transVec
+  where
+    transLengthAndOffset :: ByteMap Node -> (Int, Int)
+    transLengthAndOffset transMap
+      | ILMap.null transMap = (0, 0)
+      | otherwise           = (maxByte - minByte + 1, minByte)
+      where
+        minByte = fromIntegral (fst (ILMap.findMin transMap)) :: Int
+        maxByte = fromIntegral (fst (ILMap.findMax transMap)) :: Int
+
+{-# INLINABLE sparseStep #-}
+sparseStep :: (Storable ix, Integral ix) => Sparse ix -> Node -> Word8 -> Maybe Node
+sparseStep (Sparse nodesVec transVec) (Node nodeIdx) b
+  -- This node has no valid transitions
+  | transLen == 0        = Nothing
+  -- Transition index must be in bounds to be valid
+  | transIdx <  0        = Nothing
+  | transIdx >= transLen = Nothing
+  -- Check that the stored transition is valid
+  | nodeIdx' >= nNodes   = Nothing
+  -- Otherwise return the new node
+  | otherwise            = Just (Node nodeIdx')
+  where
+    byte = fromIntegral b :: Int
+    nNodes = SV.length nodesVec
+
+    -- Lookup sparse node info
+    !(SparseNode transStart transLen byteOff) = (SV.!) nodesVec nodeIdx
+
+    -- Lookup transition
+    -- TODO: could use unsafeIndex
+    transIdx = byte - byteOff
+    nodeIdx' = fromIntegral ((SV.!) transVec (transStart + transIdx)) :: Int
+
+{-# INLINABLE sparseToSimple #-}
+sparseToSimple :: (Storable ix, Integral ix) => Sparse ix -> Simple
+sparseToSimple (Sparse nodesVec transVec) = V.map toTransMap (V.convert nodesVec)
+  where
+    nNodes = SV.length nodesVec
+
+    toTransMap :: SparseNode -> ByteMap Node
+    toTransMap (SparseNode transStart transLen byteOff) = ILMap.fromList
+      [ (fromIntegral byte, Node (fromIntegral ix))
+      | (byte, ix) <- zip [byteOff..] $ SV.toList $ SV.slice transStart transLen transVec
+      , fromIntegral ix < nNodes
+      ]
+
+sparseSize :: forall ix. Storable ix => Sparse ix -> Int
+sparseSize (Sparse nodesVec transVec) = nodesVecSize + transVecSize
+  where
+    nodesVecSize = SV.length nodesVec * sizeOf (undefined :: SparseNode)
+    transVecSize = SV.length transVec * sizeOf (undefined :: ix)
+
 ---------------
 -- Debugging --
 ---------------
 
 -- | Pretty-print a human-readable description of the DFA structure for debugging purposes.
-prettyPrint :: DFA -> String
-prettyPrint = foldMap ppNode . zip [0..] . toList . toSimple
+prettyPrint :: Transitions t => DFA t -> String
+prettyPrint dfa@(DFA t _) = foldMap ppNode $ zip [0..] $ toList $ transToSimple t
   where
-    ppNode :: (Int, (MatchSet, ByteMap Node)) -> String
-    ppNode (i, (ms, ts))
+    ppNode :: (Int, ByteMap Node) -> String
+    ppNode (i, ts)
       | ILSet.null ms = prefix <> transStr
       | otherwise     = prefix <> matchStr <> transStr
       where
+        ms = matches dfa (Node i)
         prefix = show i
         matchStr = "\t: MatchSet    " <> show (ILSet.toList ms) <> "\n"
         transStr = "\t: Transitions " <> show (map ppTrans (ILMap.toList ts)) <> "\n"
@@ -248,67 +485,28 @@ prettyPrint = foldMap ppNode . zip [0..] . toList . toSimple
         pad  = if length bHex < 2 then "0" else ""
         bHex = showHex b ""
 
-toSimple :: DFA -> SimpleDFA
-toSimple = \case
-  Dense16  dfa -> Dense.toSimple  dfa
-  Dense32  dfa -> Dense.toSimple  dfa
-  Offset16 dfa -> Offset.toSimple dfa
-  Offset32 dfa -> Offset.toSimple dfa
-  Sparse16 dfa -> Sparse.toSimple dfa
-  Sparse32 dfa -> Sparse.toSimple dfa
-
 data Stats = Stats
   { statNodeCount :: Int
-  -- ^ Number of nodes in the DFA.
-  , statBytesPerNodeIndexSparse :: Int
-  -- ^ Number of bytes used to represent a node in the sparse representation.
-  , statBytesPerNodeIndexDense :: Int
-  -- ^
   , statAvgTransitionsPerNode :: Double
   , statMatchNodeCount :: Int
   , statAvgMatchesPerMatchNode :: Double
-  , statSizeOfSparse :: Int
-  , statSizeOfDense :: Int
+  , statByteSizeOfTransitions :: Int
   }
   deriving (Show)
 
-computeStats :: DFA -> Stats
-computeStats (toSimple -> dfa) = Stats
+computeStats :: Transitions t => DFA t -> Stats
+computeStats (DFA t matchNodes) = Stats
   { statNodeCount = n
-  , statBytesPerNodeIndexSparse = sparseIxBytes
-  , statBytesPerNodeIndexDense = denseIxBytes
-  , statAvgTransitionsPerNode = avg (map ILMap.size transitions)
-  , statMatchNodeCount = length matches
-  , statAvgMatchesPerMatchNode = avg (map ILSet.size matches)
-  , statSizeOfSparse = sparseSize
-  , statSizeOfDense = denseSize
+  , statAvgTransitionsPerNode = avg (map ILMap.size (V.toList simpleVec))
+  , statMatchNodeCount = ILMap.size matchNodes
+  , statAvgMatchesPerMatchNode = avg (map ILSet.size (ILMap.elems matchNodes))
+  , statByteSizeOfTransitions = transSize t
   }
   where
-    n = V.length dfa
-    sparseIxBytes
-      | n <= maxNodes16 = 2
-      | n <= maxNodes32 = 4
-      | otherwise       = error "too many nodes to fit in memory"
-    denseIxBytes
-      | n < maxNodes16 = 2
-      | n < maxNodes32 = 4
-      | otherwise      = error "too many nodes to fit in memory"
-
-    matches = filter (not . ILSet.null) $ map fst $ toList dfa
-    transitions = map snd $ toList dfa
+    n = V.length simpleVec
+    simpleVec = transToSimple t
 
     avg :: Real a => [a] -> Double
     avg [] = 0
     avg as = foldl' (\s a -> s + realToFrac a) 0 as / realToFrac (length as)
 
-    -- TODO: calculate size via compact regions?
-    ptrSize = sizeOf (undefined :: Ptr Int)
-    denseSize = n * denseIxBytes * 256 -- node array contents
-              + 2 * ptrSize -- node array overhead
-              + n * ptrSize -- match array contents
-              + 2 * ptrSize -- match array overhead (excluding card table)
-              + 2 * ptrSize -- pointers to the arrays
-    sparseSize = n * 3 * ptrSize -- per-node overhead (ptrs to match set and PrimMap arrays)
-               + n * 4 * ptrSize -- array overhead for transition PrimMaps
-               + (1 + sparseIxBytes) * sum (map ILMap.size transitions) -- transition map contents
-               + 2 * ptrSize -- array overhead (excluding card table)

@@ -17,8 +17,8 @@ import Thexa.Regex.Unicode.Grapheme (grapheme)
 import Thexa.Regex.Unicode.Properties
 
 -- | A precompiled 'DFA' which matches the 'grapheme' Regex for UTF-8 encoded text.
-graphemeDFA :: DFA.DFA
-graphemeDFA = $(let dfa = DFA.denseFromNFA (compileRegex grapheme) in [| dfa |])
+graphemeDFA :: DFA.DFA (DFA.Dense Word16)
+graphemeDFA = $$(let dfa = DFA.fromNFA (compileRegex grapheme) in [|| dfa ||])
 
 -- | Given a UTF-8 encoded string, find the offset to the next grapheme boundary, in bytes.
 --
@@ -37,7 +37,7 @@ findGraphemeBoundary getNextByte initStr
   where
     -- In the common case of purely ASCII text, we want to avoid the whole DFA machinery. So to
     -- optimize this, we look at the next two bytes of the input, and if they're both ASCII, then we
-    -- know we there is a grapheme boundary between them. This works because none of the code points
+    -- know there is a grapheme boundary between them. This works because none of the code points
     -- that can result in a longer grapheme cluster are ASCII. The exception is the sequence \r\n,
     -- which counts as a single grapheme, so we specifically check for that case.
     simpleBoundary = case getNextByte initStr of

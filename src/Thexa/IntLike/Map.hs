@@ -82,6 +82,7 @@ import Data.Foldable qualified as Foldable
 import Data.IntMap.Strict qualified as IM
 import Data.IntMap.Merge.Strict qualified as IM
 import GHC.Exts qualified as GHC
+import Language.Haskell.TH.Syntax (Lift(liftTyped))
 
 import Thexa.IntLike.Class
 import Thexa.IntLike.Set (ILSet)
@@ -104,6 +105,10 @@ instance (IntLike k, Show k, Show v) => Show (ILMap k v) where
 
 instance (IntLike k, Read k, Read v) => Read (ILMap k v) where
   readPrec = fromList <$> Read.readPrec
+
+instance Lift v => Lift (ILMap k v) where
+  liftTyped (ILMap m) = [|| ILMap (IM.fromDistinctAscList kvs) ||]
+    where kvs = IM.toAscList m
 
 -- | @unionWithSetInsert x y = 'unionWith' 'ILSet.union' x (map 'ILSet.singleton' y)@, but more
 -- efficient by using 'IM.merge'. This isn't wrapping a normal @IntMap@ function, but I need it and

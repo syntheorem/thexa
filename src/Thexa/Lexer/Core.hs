@@ -26,10 +26,12 @@ import Data.Primitive.Array
 import Language.Haskell.TH (TExpQ)
 import Thexa.IntLike.Set qualified as ILSet
 
-import Thexa.DFA (DFA, MatchKey)
+import Thexa.DFA (MatchKey)
 import Thexa.DFA qualified as DFA
 import Thexa.Regex (Regex)
 import Thexa.Regex.Compiler
+
+type DFA = DFA.DFA (DFA.Dense Word32)
 
 -- | A precompiled lexer, parameterized on the types of its rules' conditions and actions.
 data Lexer cond act = Lexer

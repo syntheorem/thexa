@@ -27,9 +27,10 @@ import Thexa.Regex.Parser qualified as RE
 -- To do this, we use this type to hold all forms of the compiled regex.
 data CompiledRegex = CR
   { nfa :: NFA
-  , dense :: DFA
-  , offset :: DFA
-  , sparse :: DFA
+  , dense16 :: DFA (DFA.Dense Word16)
+  , dense32 :: DFA (DFA.Dense Word32)
+  , sparse16 :: DFA (DFA.Sparse Word16)
+  , sparse32 :: DFA (DFA.Sparse Word32)
   }
 
 -- Compile a single regex.
@@ -40,9 +41,10 @@ compile :: [(Regex, MatchKey)] -> CompiledRegex
 compile regexes = CR {..}
   where
     nfa = compileRegexes regexes
-    dense = DFA.denseFromNFA nfa
-    offset = DFA.offsetFromNFA nfa
-    sparse = DFA.sparseFromNFA nfa
+    dense16 = DFA.fromNFA nfa
+    dense32 = DFA.fromNFA nfa
+    sparse16 = DFA.fromNFA nfa
+    sparse32 = DFA.fromNFA nfa
 
 -- Parse a regex. Throw an exception on failure or if the regex contains splices.
 parse :: String -> Regex
@@ -70,7 +72,7 @@ matchBytesNFA nfa = go Nothing (NFA.startNodes nfa)
 
 -- Basically the same as matchBytesNFA, but for DFAs. I could create a typeclass to abstract over
 -- NFAs and DFAs to avoid this duplication, but this is the only place that would be useful.
-matchBytesDFA :: DFA -> [Word8] -> Maybe (MatchSet, [Word8])
+matchBytesDFA :: DFA.Transitions t => DFA t -> [Word8] -> Maybe (MatchSet, [Word8])
 matchBytesDFA dfa = go Nothing DFA.startNode
   where
     go lastMatch node bs = case bs of
@@ -171,6 +173,10 @@ spec = modifyMaxSuccess (max 1000) do
     ["a", "\n", " ", "1"]
     ["", "÷", "Φ"]
 
+  describeRegex "a|b*c"
+    ["a", "c", "bbbc"]
+    ["", "abc", "ba"]
+
   describeRegexes "multiple regexes"
     [ ("a+"   , ["a", "aa"])
     , ("a*b+" , ["b", "bbb", "ab", "aaabb"])
@@ -268,10 +274,11 @@ shouldMatchWith :: HasCallStack
   => (Maybe (MatchSet, [Word8]) -> Maybe String)
   -> CompiledRegex -> [Word8] -> Expectation
 shouldMatchWith f cr bs
-  | Just err <- f (matchBytesNFA (nfa    cr) bs) = expectationFailure ("NFA failed: "<>err)
-  | Just err <- f (matchBytesDFA (dense  cr) bs) = expectationFailure ("DenseDFA failed: "<>err)
-  | Just err <- f (matchBytesDFA (offset cr) bs) = expectationFailure ("OffsetDFA failed: "<>err)
-  | Just err <- f (matchBytesDFA (sparse cr) bs) = expectationFailure ("SparseDFA failed: "<>err)
+  | Just err <- f (matchBytesNFA (nfa      cr) bs) = expectationFailure ("NFA failed: "<>err)
+  | Just err <- f (matchBytesDFA (dense16  cr) bs) = expectationFailure ("DFA (Dense Word16) failed: "<>err)
+  | Just err <- f (matchBytesDFA (dense32  cr) bs) = expectationFailure ("DFA (Dense Word32) failed: "<>err)
+  | Just err <- f (matchBytesDFA (sparse16 cr) bs) = expectationFailure ("DFA (Sparse Word16) failed: "<>err)
+  | Just err <- f (matchBytesDFA (sparse32 cr) bs) = expectationFailure ("DFA (Sparse Word32) failed: "<>err)
   | otherwise = pure ()
 
 propMatch :: CompiledRegex -> [Word8] -> Property
@@ -285,10 +292,11 @@ propMatchWith :: ()
   => (Maybe (MatchSet, [Word8]) -> Maybe String)
   -> CompiledRegex -> [Word8] -> Property
 propMatchWith f cr bs = conjoin
-  [ counterexample "NFA"       $ go (matchBytesNFA (nfa    cr) bs)
-  , counterexample "DenseDFA"  $ go (matchBytesDFA (dense  cr) bs)
-  , counterexample "SparseDFA" $ go (matchBytesDFA (sparse cr) bs)
-  , counterexample "OffsetDFA" $ go (matchBytesDFA (offset cr) bs)
+  [ counterexample "NFA"                 $ go (matchBytesNFA (nfa      cr) bs)
+  , counterexample "DFA (Dense Word16)"  $ go (matchBytesDFA (dense16  cr) bs)
+  , counterexample "DFA (Dense Word32)"  $ go (matchBytesDFA (dense32  cr) bs)
+  , counterexample "DFA (Sparse Word16)" $ go (matchBytesDFA (sparse16 cr) bs)
+  , counterexample "DFA (Sparse Word32)" $ go (matchBytesDFA (sparse32 cr) bs)
   ]
   where
     go result = case f result of

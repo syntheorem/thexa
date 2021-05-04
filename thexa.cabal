@@ -101,10 +101,6 @@ library
   hs-source-dirs: src
   exposed-modules:
     Thexa.DFA
-    Thexa.DFA.Dense
-    Thexa.DFA.Sparse
-    Thexa.DFA.Offset
-    Thexa.DFA.Types
     Thexa.GrowVector
     Thexa.IntLike.Class
     Thexa.IntLike.Map
@@ -114,7 +110,6 @@ library
     Thexa.Lexer.Position
     Thexa.NFA
     Thexa.Orphans
-    Thexa.PrimMap
     Thexa.Regex
     Thexa.Regex.AST
     Thexa.Regex.CharSet
@@ -135,7 +130,6 @@ test-suite spec
   hs-source-dirs: spec
   main-is: Spec.hs
   other-modules:
-    Thexa.PrimMapSpec
     Thexa.Regex.CharSetSpec
     Thexa.Regex.CompileSpec
     Thexa.Regex.ParserSpec
