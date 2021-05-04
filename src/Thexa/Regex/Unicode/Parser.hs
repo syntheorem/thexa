@@ -30,16 +30,51 @@ readUnicodeDataFile file = do
   let propMapList = Map.toAscList propMap
   [|| Map.fromDistinctAscList propMapList ||]
 
+readGraphemeBreakTest :: Q (TExp [[String]])
+readGraphemeBreakTest = do
+  let file = "unicode/GraphemeBreakTest.txt"
+  file' <- makeRelativeToProject file
+  contents <- liftIO $ readFile file'
+
+  result <- case P.parse gbtFile file contents of
+    Left errs -> fail ("unable to parse Unicode data file\n"<>P.errorBundlePretty errs)
+    Right res -> pure res
+
+  [|| result ||]
+
 type Parser = P.Parsec Void String
 
 ucdFile :: Parser [(String, CharSet)]
 ucdFile = do
   skipEmptyLines
   P.many (ucdEntry <* skipEmptyLines) <* P.eof
+
+gbtFile :: Parser [[String]]
+gbtFile = do
+  skipEmptyLines
+  P.many (gbtEntry <* skipEmptyLines) <* P.eof
+
+gbtEntry :: Parser [String]
+gbtEntry = do
+  break -- every entry starts with a break
+  P.manyTill grapheme lineEnd
   where
-    skipEmptyLines = P.skipMany do
-      L.space P.hspace1 (L.skipLineComment "#") empty
-      P.eol
+    grapheme = do
+      c <- codePoint
+      P.choice
+        [ break >> pure [c]
+        , noBreak >> (c:) <$> grapheme
+        ]
+
+    break = P.char '÷' >> P.hspace
+    noBreak = P.char '×' >> P.hspace
+    codePoint = ucdCodePoint <* P.hspace
+    lineEnd = L.skipLineComment "#" <|> void P.eol
+
+skipEmptyLines :: Parser ()
+skipEmptyLines = P.skipMany do
+  L.space P.hspace1 (L.skipLineComment "#") empty
+  P.eol
 
 ucdEntry :: Parser (String, CharSet)
 ucdEntry = do

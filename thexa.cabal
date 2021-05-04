@@ -135,6 +135,7 @@ test-suite spec
     Thexa.Regex.CharSetSpec
     Thexa.Regex.CompileSpec
     Thexa.Regex.ParserSpec
+    Thexa.Regex.UnicodeSpec
 
   build-depends:
       thexa

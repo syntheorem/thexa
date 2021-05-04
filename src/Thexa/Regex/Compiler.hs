@@ -52,9 +52,15 @@ buildRegex = \case
 
 buildRegexAlt :: Regex -> Regex -> BuildRegex
 buildRegexAlt re1 re2 start = do
-  end  <- NFA.newNode
-  end1 <- buildRegex re1 start
-  end2 <- buildRegex re2 start
+  start1 <- NFA.newNode
+  NFA.addEpsilonTransition start start1
+  end1 <- buildRegex re1 start1
+
+  start2 <- NFA.newNode
+  NFA.addEpsilonTransition start start2
+  end2 <- buildRegex re2 start2
+
+  end <- NFA.newNode
   NFA.addEpsilonTransition end1 end
   NFA.addEpsilonTransition end2 end
   pure end
