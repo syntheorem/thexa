@@ -206,7 +206,7 @@ buildNByteChars n end = go 1
 
         -- Get a char from the set so we can check the range of all chars with the same @i@th byte.
         -- We know the set is non-empty because groupByByte doesn't add entries for empty sets.
-        let c = fromJust (CS.findMin cs')
+        let c = fromJust (CS.lookupMin cs')
 
         -- This is a special case because the second byte of the largest Unicode character
         -- (@\x10FFFF@) is actually @0b10001111@ rather than @0b10111111@, so we can't use the
@@ -250,7 +250,7 @@ buildNByteChars n end = go 1
 groupByByte :: Int -> CharSet -> ByteMap CharSet
 groupByByte n = go ILMap.empty
   where
-    go bm cs = case CS.findMin cs of
+    go bm cs = case CS.lookupMin cs of
       Nothing -> bm
       Just c  -> go (ILMap.insert (utf8Byte n c) l bm) r
         where (l, r) = CS.splitLE u cs

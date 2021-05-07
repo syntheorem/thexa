@@ -26,19 +26,19 @@ instance Arbitrary CharSet where
 validRangeSet :: CharSet -> Bool
 validRangeSet set = case CS.toList set of
   [] -> True
-  ((l, u) : rs) -> l <= u && go u rs
+  ((l, u) : cs) -> l <= u && go u cs
   where
     go _ [] = True
-    go b ((l, u) : rs) = and
+    go b ((l, u) : cs) = and
       [ b < maxBound
       , succ b < l
       , l <= u
-      , go u rs
+      , go u cs
       ]
 
 -- Apply a predicate to every bound in a char set.
 allBounds :: (Char -> Bool) -> CharSet -> Bool
-allBounds p rs = all p' (CS.toList rs)
+allBounds p cs = all p' (CS.toList cs)
   where p' (l, u) = p l && p u
 
 spec :: Spec
@@ -138,10 +138,10 @@ spec = do
 
   describe "splitLE" do
     prop "uncurry union . splitLE c == id" $
-      \c rs -> uncurry CS.union (CS.splitLE c rs) === rs
+      \c cs -> uncurry CS.union (CS.splitLE c cs) === cs
 
     prop "makes valid sets" $
-      \c rs -> let (l, r) = CS.splitLE c rs in validRangeSet l && validRangeSet r
+      \c cs -> let (l, r) = CS.splitLE c cs in validRangeSet l && validRangeSet r
 
     prop "satisfies split" $
-      \c rs -> let (l, r) = CS.splitLE c rs in allBounds (<= c) l && allBounds (> c) r
+      \c cs -> let (l, r) = CS.splitLE c cs in allBounds (<= c) l && allBounds (> c) r

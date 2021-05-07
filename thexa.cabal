@@ -25,6 +25,7 @@ common deps
     , primitive
     , template-haskell >=2.16
     , vector
+    , utf8-string
 
 common lang
   default-language: Haskell2010
@@ -109,6 +110,7 @@ library
     Thexa.Lexer
     Thexa.Lexer.Core
     Thexa.Lexer.Position
+    Thexa.Lexer.Rule
     Thexa.Lexer.State
     Thexa.NFA
     Thexa.Orphans
@@ -142,7 +144,6 @@ test-suite spec
     , hspec
     , hspec-megaparsec
     , QuickCheck
-    , utf8-string
 
 benchmark bench
   import: deps, lang, exe-opts

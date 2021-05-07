@@ -6,9 +6,9 @@ This document describes the syntax and semantics of the regular expressions pars
 Characters
 ----------
 
-In this document, *character* refers to a single Unicode *code point* (the same as a `Char` in Haskell). This is important because some sequences of code points (known as a *grapheme cluster*) may be rendered as a single glyph, making them look like a single character even though they are comprised of multiple code points (for example, emojis). If this sort of construct is used within a character set, it becomes confusing because, although your editor may render a single glyph, multiple code points will actually be added to the character set.
+In this document, *character* refers to a single Unicode *code point* (the same as a `Char` in Haskell). This is important because some sequences of code points (known as *grapheme clusters*) may be rendered as a single glyph, making them look like a single character even though they are comprised of multiple code points (for example, emojis). If this sort of construct is used within a character set, it becomes confusing because, although your editor may render a single glyph, multiple code points will actually be added to the character set.
 
-Additionally, note that no normalization (in the sense of Unicode normalization) is done on the input, so if you want to match multiple graphme clusters that are equivalent under normalization, you must do that manually.
+Additionally, note that no normalization (in the sense of Unicode normalization) is done on the input, so if you want to match multiple grapheme clusters that are equivalent under normalization, you must do that manually.
 
 Whitespace
 ----------

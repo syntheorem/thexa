@@ -10,7 +10,7 @@ module Thexa.Regex.CharSet
 -- * Queries
 , null
 , member
-, findMin
+, lookupMin
 , isSubsetOf
 
 -- * Insertion
@@ -103,9 +103,9 @@ member :: Char -> CharSet -> Bool
 member c cs = singleton c `isSubsetOf` cs
 
 -- | Lookup the smallest character in the set.
-findMin :: CharSet -> Maybe Char
-findMin Nil          = Nothing
-findMin (Cons c _ _) = Just c
+lookupMin :: CharSet -> Maybe Char
+lookupMin Nil          = Nothing
+lookupMin (Cons c _ _) = Just c
 
 -- | Is the first set a subset of the second?
 isSubsetOf :: CharSet -> CharSet -> Bool

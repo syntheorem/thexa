@@ -1,6 +1,5 @@
 module Thexa.Regex.Unicode.Grapheme where
 
-import PreludePrime
 import Data.Map ((!))
 
 import Thexa.Regex (Regex, re)

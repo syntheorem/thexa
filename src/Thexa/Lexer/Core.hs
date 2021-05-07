@@ -1,19 +1,8 @@
 module Thexa.Lexer.Core
-( Lexer
+( module Thexa.Lexer.Rule
 
--- * Rules
-, Rule(..)
-, IsRule(..)
-, LexerMode
-, inMode
-, inModes
-, matchIf
-, followedBy
-, notFollowedBy
-, onMatch
-, skipMatch
-
--- * Construction
+-- * Lexer construction
+, Lexer
 , makeLexer
 
 -- * Running the lexer
@@ -34,19 +23,23 @@ import Thexa.IntLike.Set qualified as ILSet
 
 import Thexa.DFA (MatchKey)
 import Thexa.DFA qualified as DFA
-import Thexa.Regex (Regex)
 import Thexa.Regex.Compiler
+
+import Thexa.Lexer.Position (GetNextByte)
+import Thexa.Lexer.Rule
 
 type DFA = DFA.DFA (DFA.Dense Word32)
 
--- | A precompiled lexer, parameterized on the types of its rules' conditions and actions.
+-- | A precompiled lexer, parameterized on the types of its rules' modes, conditions, and actions.
 data Lexer mode cond act = Lexer
-  { lexerDFA :: {-# UNPACK #-} !(Vector DFA)
+  {-# UNPACK #-} !(Vector DFA)
   -- ^ The DFAs used to match input to the lexer, one for each mode.
-  , lexerMatchInfo :: {-# UNPACK #-} !(Vector (MatchInfo cond act))
+  {-# UNPACK #-} !(Vector (MatchInfo cond act))
   -- ^ Array of info on how we should handle a match for each rule. The DFAs are constructed so that
   -- the 'MatchKey' for each regex is an index into this array.
-  }
+
+-- Specify that the mode is nominal since it would otherwise be phantom
+type role Lexer nominal representational representational
 
 data MatchInfo cond act = MatchInfo
   { matchAction :: Maybe act
@@ -64,148 +57,47 @@ data MatchInfo cond act = MatchInfo
 instance (NFData cond, NFData act) => NFData (Lexer mode cond act) where
   rnf (Lexer dfas matchVec) = rnf dfas `seq` rnf matchVec
 
------------------
--- Lexer Rules --
------------------
-
--- | A lexer rule, describing when the rule matches and what to do if it matches.
---
--- The intent is not to construct this type directly, but rather use the rule combinators to
--- construct a rule from a 'Regex'. For example:
---
--- @@@
--- [re|(a|b)+|]
---     `'followedBy'` [re|c|]
---     `'matchIf'` [|| someCondition ||]
---     `'onMatch'` [|| someAction ||]
--- @@@
---
--- Note that multiple 'matchIf' clauses are allowed, and all clauses other than the regex itself are
--- optional (but if 'onMatch' is omitted, then 'skipMatch' should be used instead).
-data Rule mode cond act = Rule
-  { ruleRegex :: Regex
-  -- ^ The regex that must be matched for the rule to match.
-  , ruleAction :: Maybe (TExpQ act)
-  -- ^ The action that should be run when the rule matches. If this is absent, then the rule simply
-  -- skips any input that it matches.
-  , ruleFollowedBy :: Maybe Regex
-  -- ^ If this is present, then the rule only matches if this regex matches the input immediately
-  -- following the input matched by 'ruleRegex'. The difference from just appending this to
-  -- 'ruleRegex' is that the input matched by this is not consumed by the rule.
-  , ruleNotFollowedBy :: Maybe Regex
-  -- ^ The same as 'ruleFollowedBy' except that the rule only matches if this regex DOESN'T match
-  -- the input immediately following the input matched by 'ruleRegex'. It is valid to include both a
-  -- 'ruleFollowedBy' and a 'ruleNotFollowedBy'.
-  , ruleConditions :: [TExpQ cond]
-  -- ^ The list of additional, user-defined conditions that must all be satisfied in order for the
-  -- rule to match.
-  , ruleModes :: Set mode
-  -- ^ Set of 'LexerMode's in which this rule is active. If empty, the rule will only be active in
-  -- the default mode.
-  }
-
--- | Class to enable transparently treating a 'Regex' as a 'Rule'.
-class IsRule rule mode cond act where
-  toRule :: rule -> Rule mode cond act
-
-instance IsRule Regex mode cond act where
-  toRule regex = Rule regex Nothing Nothing Nothing [] Set.empty
-
-instance IsRule (Rule mode cond act) mode cond act where
-  toRule = id
-
--- TODO: document
-type LexerMode a = (Enum a, Bounded a, Ord a)
-
--- | Insert the given mode into 'ruleModes'.
-inMode :: (IsRule rule mode cond act, LexerMode mode) => rule -> mode -> Rule mode cond act
-inMode (toRule -> rule) mode = rule { ruleModes = Set.insert mode (ruleModes rule)}
-
--- | Insert all the given modes into 'ruleModes'.
-inModes :: (IsRule rule mode cond act, LexerMode mode) => rule -> [mode] -> Rule mode cond act
-inModes (toRule -> rule) (Set.fromList -> modes) = rule { ruleModes = Set.union modes (ruleModes rule)}
-
--- | Prepend the given condition to 'ruleConditions'.
-matchIf :: IsRule rule mode cond act => rule -> TExpQ cond -> Rule mode cond act
-matchIf (toRule -> rule) cond = rule { ruleConditions = cond : ruleConditions rule }
-
--- | Set 'ruleFollowedBy' to the given regex.
---
--- Calls 'error' if 'ruleFollowedBy' has already been set for this rule.
-followedBy :: (Partial, IsRule rule mode cond act) => rule -> Regex -> Rule mode cond act
-followedBy (toRule -> rule) regex =
-  case ruleFollowedBy rule of
-    Nothing -> rule { ruleFollowedBy = Just regex }
-    Just _  -> error "lexer rule already has a followedBy regex"
-
--- | Set 'ruleNotFollowedBy' to the given regex.
---
--- Calls 'error' if 'ruleNotFollowedBy' has already been set for this rule.
-notFollowedBy :: (Partial, IsRule rule mode cond act) => rule -> Regex -> Rule mode cond act
-notFollowedBy (toRule -> rule) regex =
-  case ruleNotFollowedBy rule of
-    Nothing -> rule { ruleNotFollowedBy = Just regex }
-    Just _  -> error "lexer rule already has a notFollowedBy regex"
-
--- | Set 'ruleAction' to the given action.
---
--- Calls 'error' if 'ruleAction' has already been set for this rule.
-onMatch :: forall rule mode cond act. (Partial, IsRule rule mode cond act) => rule -> TExpQ act -> Rule mode cond act
-onMatch (toRule @_ @_ @_ @act -> rule) action =
-  case ruleAction rule of
-    Nothing -> rule { ruleAction = Just action }
-    Just _  -> error "lexer rule already has an onMatch action"
-
--- | Indicate that the rule should simply skip the consumed input when it matches.
---
--- Doesn't actually do anything other than call 'error' if the rule already has a 'ruleAction', but
--- is useful both to indicate intent and to convert a bare 'Regex' to a 'Rule', so a rule to skip
--- whitespace might look like @[re|$space+|] & skipMatch@.
-skipMatch :: (Partial, IsRule rule mode cond act) => rule -> Rule mode cond act
-skipMatch (toRule -> rule) =
-  case ruleAction rule of
-    Nothing -> rule
-    Just _  -> error "lexer rule already has an onMatch action"
-
 -- | Construct a lexer at compile-time from the list of rules it should match.
 --
 -- The order of the rules in the list is important; the resulting lexer will always prefer the
 -- longest match, but in the case that multiple rules match the same length of input, the rule that
 -- appears earliest in the list will be chosen.
 makeLexer :: forall mode cond act. LexerMode mode => [Rule mode cond act] -> TExpQ (Lexer mode cond act)
-makeLexer rules = [|| Lexer dfas (V.fromListN matchListLen $$matchList) ||]
+makeLexer rules
+  | modesAreValid = [|| Lexer dfas (V.fromListN matchListLen $$matchList) ||]
+  | otherwise = fail "invalid Enum instance for LexerMode"
   where
-    regexes = [(if Set.null modes then defaultMode else modes, (ruleRegex rule, i))
+    dfas = V.fromList $ map (DFA.fromNFA . compileRegexes) regexesByMode
+
+    -- Extract the modes, regex, and rule index from each rule
+    regexes :: [(Set mode, (Regex, Int))]
+    regexes = [ (if Set.null modes then defaultMode else modes, (ruleRegex rule, i))
               | i <- [0..]
               | rule <- rules
               , let modes = ruleModes rule
               ]
 
-    dfas = V.fromList $ map (DFA.fromNFA . compileRegexes) regexesByMode
-
+    -- Get the list of regexes for each mode
+    regexesByMode :: [[(Regex, Int)]]
     regexesByMode = allModes & map \mode ->
-      regexes & filterMap \(modes, regex) ->
-        if Set.member mode modes then Just regex else Nothing
+      [ regex | (modes, regex) <- regexes, Set.member mode modes ]
 
-    allModes :: [mode]
-    allModes = [minBound .. maxBound]
+    -- Enforce that the enum instance is equivalent to a derived one
+    modesAreValid = map fromEnum allModes == [0..fromEnum (maxBound @mode)]
+    defaultMode = Set.singleton minBound
+    allModes = [minBound @mode .. maxBound @mode]
 
-    defaultMode = Set.singleton (toEnum 0)
-    validModes = and
-      [ fromEnum (minBound @mode) == 0
-      , map (fromEnum @mode) [minBound..maxBound] == [0..fromEnum (maxBound @mode)]
-      ]
-
+    -- Construct the list of MatchInfos
     matchList = liftListWith liftMatchInfo rules
     matchListLen = length rules
 
     liftMatchInfo :: Rule mode cond act -> TExpQ (MatchInfo cond act)
     liftMatchInfo rule = [|| MatchInfo
-        { matchAction = $$matchAct
-        , matchFollowedBy = fbDFA
-        , matchNotFollowedBy = nfDFA
-        , matchConditions = $$matchConds
-        }||]
+      { matchAction = $$matchAct
+      , matchFollowedBy = fbDFA
+      , matchNotFollowedBy = nfDFA
+      , matchConditions = $$matchConds
+      }||]
       where
         fbDFA = mkDFA <$> ruleFollowedBy rule
         nfDFA = mkDFA <$> ruleNotFollowedBy rule
@@ -221,12 +113,6 @@ makeLexer rules = [|| Lexer dfas (V.fromListN matchListLen $$matchList) ||]
 ---------------------
 -- Lexer Execution --
 ---------------------
-
--- | Type of the function used to get the next byte of the input stream.
---
--- Such a function should return the next byte and the remaining input, or 'Nothing' if the input
--- stream is empty.
-type GetNextByte str = str -> Maybe (Word8, str)
 
 -- | Type of the function used to evaluate rule conditions.
 --
