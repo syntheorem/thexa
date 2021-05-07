@@ -26,10 +26,10 @@ module Thexa.Regex
 
 import PreludePrime
 
-import Thexa.Regex.AST (Regex)
-import Thexa.Regex.AST qualified as AST
-import Thexa.Regex.CharSet (CharSet)
-import Thexa.Regex.QuasiQuoters (re, cs)
+import Thexa.CharSet (CharSet)
+import Thexa.Internal.Regex.AST (Regex)
+import Thexa.Internal.Regex.AST qualified as AST
+import Thexa.Internal.Regex.QuasiQuoters (re, cs)
 
 -- Functions from Regex.AST with their types specialized to Regex
 -----------------------------------------------------------------

@@ -1,4 +1,8 @@
-module Thexa.Regex.Unicode.Parser where
+-- | Functions to parse the Unicode data files in the @unicode@ directory.
+module Thexa.Internal.Unicode.Parser
+( readUnicodeDataFile
+, readGraphemeBreakTest
+) where
 
 import PreludePrime
 
@@ -15,8 +19,8 @@ import Data.FileEmbed (makeRelativeToProject)
 import Language.Haskell.TH (Q, TExp)
 import System.IO (FilePath, readFile)
 
-import Thexa.Regex.CharSet (CharSet)
-import Thexa.Regex.CharSet qualified as CS
+import Thexa.CharSet (CharSet)
+import Thexa.CharSet qualified as CS
 
 readUnicodeDataFile :: FilePath -> Q (TExp (Map String CharSet))
 readUnicodeDataFile file = do

@@ -1,5 +1,5 @@
-module Thexa.Lexer.Core
-( module Thexa.Lexer.Rule
+module Thexa.Core
+( module Thexa.Rule
 
 -- * Lexer construction
 , Lexer
@@ -19,14 +19,14 @@ import Data.Set qualified as Set
 import Data.Vector (Vector)
 import Data.Vector qualified as V
 import Language.Haskell.TH (TExpQ)
-import Thexa.IntLike.Set qualified as ILSet
 
-import Thexa.DFA (MatchKey)
-import Thexa.DFA qualified as DFA
-import Thexa.Regex.Compiler
+import Thexa.Internal.DFA (MatchKey)
+import Thexa.Internal.DFA qualified as DFA
+import Thexa.Internal.IntLike.Set qualified as ILSet
+import Thexa.Internal.Regex.Compiler
 
-import Thexa.Lexer.Position (GetNextByte)
-import Thexa.Lexer.Rule
+import Thexa.Position (GetNextByte)
+import Thexa.Rule
 
 type DFA = DFA.DFA (DFA.Dense Word32)
 

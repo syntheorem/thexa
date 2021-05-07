@@ -2,7 +2,7 @@
 
 -- | See @SYNTAX.md@ for more information about the regex syntax that we're parsing here. Most of
 -- the subparsers in this file have a corresponding production in the syntax description.
-module Thexa.Regex.Parser
+module Thexa.Internal.Regex.Parser
 ( ParseErrors
 , parseRegex
 , parseCharSet
@@ -21,11 +21,11 @@ import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P
 import Text.Megaparsec.Char.Lexer qualified as L
 
-import Thexa.Regex.AST (RegexAST)
-import Thexa.Regex.AST qualified as RE
-import Thexa.Regex.CharSet.AST (CharSetAST)
-import Thexa.Regex.CharSet.AST qualified as CS
-import Thexa.Regex.Unicode.Properties qualified as UC
+import Thexa.Internal.Regex.AST (RegexAST)
+import Thexa.Internal.Regex.AST qualified as RE
+import Thexa.Internal.CharSet.AST (CharSetAST)
+import Thexa.Internal.CharSet.AST qualified as CS
+import Thexa.Internal.Unicode.Properties qualified as UC
 
 type Parser = P.Parsec Void String
 
@@ -300,7 +300,7 @@ unicodePropEscape = P.label "Unicode property escape" do
   _ <- P.string "\\p"
   P.between (symbol "{") (symbol "}") do
     propNameOffset <- P.getOffset
-    propName <- lexeme $ P.some $ (P.alphaNumChar <|> P.char '-' <|> P.char '_')
+    propName <- lexeme $ P.some (P.alphaNumChar <|> P.char '-' <|> P.char '_')
 
     case Map.lookup propName propMap of
       Just cs -> pure (CS.Chars cs)

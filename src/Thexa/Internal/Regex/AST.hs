@@ -1,14 +1,14 @@
-module Thexa.Regex.AST where
+module Thexa.Internal.Regex.AST where
 
 import PreludePrime
 
 import Data.Foldable (foldr1)
 import Data.String (IsString(fromString))
 
-import Thexa.Regex.CharSet (CharSet)
-import Thexa.Regex.CharSet qualified as CS
-import Thexa.Regex.CharSet.AST (CharSetAST, IsCharSet(fromCharSet))
-import Thexa.Regex.CharSet.AST qualified as CS (fromAST, normalize)
+import Thexa.CharSet (CharSet)
+import Thexa.CharSet qualified as CS
+import Thexa.Internal.CharSet.AST (CharSetAST, IsCharSet(fromCharSet))
+import Thexa.Internal.CharSet.AST qualified as CS (fromAST, normalize)
 
 type Regex = RegexAST' CharSet Void
 type RegexAST = RegexAST' CharSetAST String

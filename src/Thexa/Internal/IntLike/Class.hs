@@ -1,5 +1,5 @@
 {-# LANGUAGE CPP #-}
-module Thexa.IntLike.Class where
+module Thexa.Internal.IntLike.Class where
 
 import PreludePrime
 

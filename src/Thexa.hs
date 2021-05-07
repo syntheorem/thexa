@@ -1,5 +1,5 @@
-module Thexa.Lexer.State
-( module Thexa.Lexer.Rule
+module Thexa
+( module Thexa.Rule
 
 , Lexer
 , Action
@@ -41,10 +41,10 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
 import Data.ByteString.Lazy.UTF8 qualified as UTF8
 
-import Thexa.Lexer.Core (MatchResult(..), EvalCondition)
-import Thexa.Lexer.Core qualified as Core
-import Thexa.Lexer.Position
-import Thexa.Lexer.Rule
+import Thexa.Core (MatchResult(..), EvalCondition)
+import Thexa.Core qualified as Core
+import Thexa.Position
+import Thexa.Rule
 
 type Lexer str mode userState token m = Core.Lexer mode (Condition str mode userState token) (Action str m)
 

@@ -3,7 +3,7 @@
 -- | 'Lift' orphan instances. These aren't strictly necessary, but I really want to be able to
 -- derive 'Lift' for types using vectors. Not just because it's convenient, but because it's less
 -- error-prone than writing the instance manually.
-module Thexa.Orphans () where
+module Thexa.Internal.Orphans () where
 
 import PreludePrime
 

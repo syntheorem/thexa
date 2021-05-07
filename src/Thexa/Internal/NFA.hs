@@ -1,4 +1,4 @@
-module Thexa.NFA
+module Thexa.Internal.NFA
 ( NFA
 , Node
 , Transitions(..)
@@ -48,10 +48,10 @@ import Data.Primitive.MutVar
 import Data.Vector qualified as V
 import Numeric (showHex)
 
-import Thexa.GrowVector qualified as GV
-import Thexa.IntLike.Class (IntLike)
-import Thexa.IntLike.Map qualified as ILMap
-import Thexa.IntLike.Set qualified as ILSet
+import Thexa.Internal.GrowVector qualified as GV
+import Thexa.Internal.IntLike.Class (IntLike)
+import Thexa.Internal.IntLike.Map qualified as ILMap
+import Thexa.Internal.IntLike.Set qualified as ILSet
 
 -- | Non-deterministic Finite Automaton with byte-labeled transitions.
 --

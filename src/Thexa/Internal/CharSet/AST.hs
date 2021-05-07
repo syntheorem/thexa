@@ -1,11 +1,11 @@
-module Thexa.Regex.CharSet.AST where
+module Thexa.Internal.CharSet.AST where
 
 import PreludePrime
 import Data.Foldable (foldl1)
 import Data.String (IsString(fromString))
 
-import Thexa.Regex.CharSet (CharSet)
-import Thexa.Regex.CharSet qualified as CS
+import Thexa.CharSet (CharSet)
+import Thexa.CharSet qualified as CS
 
 -- | Syntax tree for a char set.
 --

@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Thexa.Regex.CharSetSpec where
+module Thexa.CharSetSpec where
 
 import PreludePrime
 
@@ -7,8 +7,8 @@ import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
 
-import Thexa.Regex.CharSet (CharSet)
-import Thexa.Regex.CharSet qualified as CS
+import Thexa.CharSet (CharSet)
+import Thexa.CharSet qualified as CS
 
 instance Arbitrary CharSet where
   arbitrary = CS.unsafeFromList <$> rangeListGen minBound

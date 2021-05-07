@@ -102,29 +102,28 @@ library
   import: deps, lang, opts
   hs-source-dirs: src
   exposed-modules:
-    Thexa.DFA
-    Thexa.GrowVector
-    Thexa.IntLike.Class
-    Thexa.IntLike.Map
-    Thexa.IntLike.Set
-    Thexa.Lexer
-    Thexa.Lexer.Core
-    Thexa.Lexer.Position
-    Thexa.Lexer.Rule
-    Thexa.Lexer.State
-    Thexa.NFA
-    Thexa.Orphans
+    Thexa
+    Thexa.CharSet
+    Thexa.Core
+    Thexa.Position
     Thexa.Regex
-    Thexa.Regex.AST
-    Thexa.Regex.CharSet
-    Thexa.Regex.CharSet.AST
-    Thexa.Regex.Compiler
-    Thexa.Regex.Parser
-    Thexa.Regex.QuasiQuoters
-    Thexa.Regex.Unicode
-    Thexa.Regex.Unicode.Grapheme
-    Thexa.Regex.Unicode.Parser
-    Thexa.Regex.Unicode.Properties
+    Thexa.Rule
+
+    Thexa.Internal.CharSet.AST
+    Thexa.Internal.DFA
+    Thexa.Internal.GrowVector
+    Thexa.Internal.IntLike.Class
+    Thexa.Internal.IntLike.Map
+    Thexa.Internal.IntLike.Set
+    Thexa.Internal.NFA
+    Thexa.Internal.Orphans
+    Thexa.Internal.Regex.AST
+    Thexa.Internal.Regex.Compiler
+    Thexa.Internal.Regex.Parser
+    Thexa.Internal.Regex.QuasiQuoters
+    Thexa.Internal.Unicode.Grapheme
+    Thexa.Internal.Unicode.Parser
+    Thexa.Internal.Unicode.Properties
 
 test-suite spec
   import: deps, lang, exe-opts
@@ -134,10 +133,10 @@ test-suite spec
   hs-source-dirs: spec
   main-is: Spec.hs
   other-modules:
-    Thexa.Regex.CharSetSpec
+    Thexa.CharSetSpec
+    Thexa.PositionSpec
     Thexa.Regex.CompileSpec
     Thexa.Regex.ParserSpec
-    Thexa.Regex.UnicodeSpec
 
   build-depends:
       thexa

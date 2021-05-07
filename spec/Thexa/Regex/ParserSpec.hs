@@ -6,12 +6,12 @@ import Data.Map ((!))
 import Test.Hspec
 import Test.Hspec.Megaparsec
 
-import Thexa.Regex.AST (RegexAST)
-import Thexa.Regex.AST qualified as RE
-import Thexa.Regex.CharSet.AST (CharSetAST)
-import Thexa.Regex.CharSet.AST qualified as CS
-import Thexa.Regex.Parser
-import Thexa.Regex.Unicode qualified as UC
+import Thexa.Internal.CharSet.AST (CharSetAST)
+import Thexa.Internal.CharSet.AST qualified as CS
+import Thexa.Internal.Regex.AST (RegexAST)
+import Thexa.Internal.Regex.AST qualified as RE
+import Thexa.Internal.Regex.Parser
+import Thexa.Internal.Unicode.Properties qualified as UC
 
 shouldParseCS :: String -> CharSetAST -> Expectation
 shouldParseCS s = shouldParse (CS.normalize <$> parseCharSet s) . CS.normalize

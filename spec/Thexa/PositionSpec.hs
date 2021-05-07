@@ -1,4 +1,4 @@
-module Thexa.Regex.UnicodeSpec where
+module Thexa.PositionSpec where
 
 import PreludePrime
 import Test.Hspec
@@ -6,16 +6,17 @@ import Test.Hspec
 import Data.ByteString qualified as BS
 import Data.ByteString.UTF8 qualified as UTF8
 import Data.List (zip)
-import Thexa.Regex.Unicode.Parser (readGraphemeBreakTest)
-import Thexa.Regex.Unicode (findGraphemeBoundary)
+import Thexa.Internal.Unicode.Parser (readGraphemeBreakTest)
+import Thexa.Position (findGraphemeBoundary)
 
 graphemeList :: [[String]]
 graphemeList = $$(readGraphemeBreakTest)
 
 spec :: Spec
 spec = do
-  for_ (zip [(0::Int)..] graphemeList) \(i, gs) -> do
-    specify ("test case "<>show i) (testGraphemes gs)
+  describe "findGraphemeBoundary" do
+    for_ (zip [(0::Int)..] graphemeList) \(i, gs) -> do
+      specify ("test case "<>show i) (testGraphemes gs)
 
 testGraphemes :: [String] -> Expectation
 testGraphemes gs = go 0 str lengths

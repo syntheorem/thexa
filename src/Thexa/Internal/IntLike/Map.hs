@@ -1,4 +1,4 @@
-module Thexa.IntLike.Map
+module Thexa.Internal.IntLike.Map
 ( ILMap
 
 -- * Construction
@@ -84,9 +84,9 @@ import Data.IntMap.Merge.Strict qualified as IM
 import GHC.Exts qualified as GHC
 import Language.Haskell.TH.Syntax (Lift(liftTyped))
 
-import Thexa.IntLike.Class
-import Thexa.IntLike.Set (ILSet)
-import Thexa.IntLike.Set qualified as ILSet
+import Thexa.Internal.IntLike.Class
+import Thexa.Internal.IntLike.Set (ILSet)
+import Thexa.Internal.IntLike.Set qualified as ILSet
 
 -- | A wrapper for a strict 'IM.IntMap' that allows any key implementing 'IntLike' to be used.
 newtype ILMap k v = ILMap { unILMap :: IM.IntMap v }

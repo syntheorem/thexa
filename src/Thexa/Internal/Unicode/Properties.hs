@@ -1,4 +1,4 @@
-module Thexa.Regex.Unicode.Properties where
+module Thexa.Internal.Unicode.Properties where
 
 import PreludePrime
 
@@ -8,8 +8,8 @@ import PreludePrime
 import Data.Map.Strict (Map, (!))
 import Data.Map.Strict qualified as Map
 
-import Thexa.Regex.CharSet (CharSet)
-import Thexa.Regex.Unicode.Parser (readUnicodeDataFile)
+import Thexa.CharSet (CharSet)
+import Thexa.Internal.Unicode.Parser (readUnicodeDataFile)
 
 -- | Mapping from a Unicode property name to the set of characters with that property.
 type PropertyMap = Map String CharSet

@@ -1,4 +1,4 @@
-module Thexa.Regex.Compiler
+module Thexa.Internal.Regex.Compiler
 ( compileRegexes
 , compileRegex
 ) where
@@ -9,13 +9,13 @@ import Data.Char (chr, ord)
 import Data.Bits ((.&.), (.|.), shiftR, shiftL, complement, countTrailingZeros)
 import Data.Maybe (fromJust)
 
-import Thexa.IntLike.Map qualified as ILMap
-import Thexa.Regex.AST (Regex)
-import Thexa.Regex.AST qualified as RE
-import Thexa.Regex.CharSet (CharSet)
-import Thexa.Regex.CharSet qualified as CS
-import Thexa.NFA (NFA, ByteMap)
-import Thexa.NFA qualified as NFA
+import Thexa.CharSet (CharSet)
+import Thexa.CharSet qualified as CS
+import Thexa.Internal.IntLike.Map qualified as ILMap
+import Thexa.Internal.Regex.AST (Regex)
+import Thexa.Internal.Regex.AST qualified as RE
+import Thexa.Internal.NFA (NFA, ByteMap)
+import Thexa.Internal.NFA qualified as NFA
 
 -- | Compile a list of 'Regex'es into a single 'NFA'. The match node for each regex will use the
 -- 'NFA.MatchKey' that it is paired with.

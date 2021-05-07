@@ -1,4 +1,4 @@
-module Thexa.IntLike.Set
+module Thexa.Internal.IntLike.Set
 ( ILSet
 
 -- * Construction
@@ -51,7 +51,7 @@ import Data.IntSet qualified as IS
 import GHC.Exts qualified as GHC
 import Language.Haskell.TH.Syntax (Lift(liftTyped))
 
-import Thexa.IntLike.Class
+import Thexa.Internal.IntLike.Class
 
 -- | A wrapper for an 'IS.IntSet' that allows any value implementing 'IntLike' to be used.
 newtype ILSet a = ILSet { unILSet :: IS.IntSet }

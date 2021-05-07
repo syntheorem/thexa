@@ -1,4 +1,4 @@
-module Thexa.GrowVector
+module Thexa.Internal.GrowVector
 ( GrowVector
 , new
 , newWithCapacity

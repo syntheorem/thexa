@@ -7,17 +7,18 @@ import Test.Hspec.QuickCheck
 import Test.QuickCheck
 
 import Codec.Binary.UTF8.String qualified as UTF8
-import Thexa.IntLike.Set qualified as ILSet
+import Thexa.Internal.IntLike.Set qualified as ILSet
 
-import Thexa.DFA (DFA)
-import Thexa.DFA qualified as DFA
-import Thexa.NFA (NFA, MatchKey, MatchSet)
-import Thexa.NFA qualified as NFA
+import Thexa.Internal.DFA (DFA)
+import Thexa.Internal.DFA qualified as DFA
+import Thexa.Internal.NFA (NFA, MatchKey, MatchSet)
+import Thexa.Internal.NFA qualified as NFA
+import Thexa.Internal.Regex.AST qualified as RE
+import Thexa.Internal.Regex.Compiler (compileRegexes)
+import Thexa.Internal.Regex.Parser qualified as RE
+
+import Thexa.CharSet qualified as CS
 import Thexa.Regex (Regex, CharSet, re)
-import Thexa.Regex.AST qualified as RE
-import Thexa.Regex.CharSet qualified as CS
-import Thexa.Regex.Compiler (compileRegexes)
-import Thexa.Regex.Parser qualified as RE
 
 -- We want to run every test against all possible representations of the DFA. Although this would be
 -- sufficient for establishing correctness, we also test against the NFA directly to aid in

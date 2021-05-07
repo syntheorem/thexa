@@ -1,4 +1,4 @@
-module Thexa.Regex.CharSet
+module Thexa.CharSet
 ( CharSet
 
 -- * Construction

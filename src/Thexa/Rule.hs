@@ -1,4 +1,4 @@
-module Thexa.Lexer.Rule
+module Thexa.Rule
 ( Rule(..)
 , LexerMode
 

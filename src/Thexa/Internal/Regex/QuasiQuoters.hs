@@ -1,4 +1,4 @@
-module Thexa.Regex.QuasiQuoters where
+module Thexa.Internal.Regex.QuasiQuoters (re, cs) where
 
 import PreludePrime
 
@@ -6,13 +6,13 @@ import Language.Haskell.TH (Q)
 import Language.Haskell.TH.Quote (QuasiQuoter(..))
 import Language.Haskell.TH qualified as TH
 
-import Thexa.Regex.AST (RegexAST, Regex)
-import Thexa.Regex.AST qualified as RE
-import Thexa.Regex.CharSet (CharSet)
-import Thexa.Regex.CharSet qualified as CS
-import Thexa.Regex.CharSet.AST (CharSetAST)
-import Thexa.Regex.CharSet.AST qualified as CS (CharSetAST(..))
-import Thexa.Regex.Parser
+import Thexa.CharSet (CharSet)
+import Thexa.CharSet qualified as CS
+import Thexa.Internal.CharSet.AST (CharSetAST)
+import Thexa.Internal.CharSet.AST qualified as CS (CharSetAST(..))
+import Thexa.Internal.Regex.AST (RegexAST, Regex)
+import Thexa.Internal.Regex.AST qualified as RE
+import Thexa.Internal.Regex.Parser
 
 -- | Quasi-quoter for regular expressions. The resulting expression has type 'RE.Regex'.
 re :: QuasiQuoter

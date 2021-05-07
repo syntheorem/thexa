@@ -4,7 +4,7 @@
 -- 1. get rid of the whole IntLike thing, just use Map and Set instead
 -- 2. use NodeMap MatchSet or Vector MatchSet?
 
-module Thexa.DFA
+module Thexa.Internal.DFA
 ( DFA
 , Node
 , MatchKey
@@ -40,13 +40,13 @@ import Foreign.Storable (Storable(sizeOf, alignment, peek, poke, peekByteOff, po
 import Language.Haskell.TH.Syntax (Lift)
 import Numeric (showHex)
 
-import Thexa.IntLike.Class (IntLike)
-import Thexa.IntLike.Map qualified as ILMap
-import Thexa.IntLike.Set qualified as ILSet
-import Thexa.GrowVector qualified as GV
-import Thexa.NFA (NFA, MatchKey, MatchSet, ByteMap)
-import Thexa.NFA qualified as NFA
-import Thexa.Orphans ()
+import Thexa.Internal.IntLike.Class (IntLike)
+import Thexa.Internal.IntLike.Map qualified as ILMap
+import Thexa.Internal.IntLike.Set qualified as ILSet
+import Thexa.Internal.GrowVector qualified as GV
+import Thexa.Internal.NFA (NFA, MatchKey, MatchSet, ByteMap)
+import Thexa.Internal.NFA qualified as NFA
+import Thexa.Internal.Orphans ()
 
 -- | Deterministic Finite Automaton with byte-labeled transitions.
 --

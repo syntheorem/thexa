@@ -1,10 +1,10 @@
-module Thexa.Regex.Unicode.Grapheme where
+module Thexa.Internal.Unicode.Grapheme where
 
 import Data.Map ((!))
 
 import Thexa.Regex (Regex, re)
-import Thexa.Regex.Unicode.Properties (PropertyMap)
-import Thexa.Regex.Unicode.Parser (readUnicodeDataFile)
+import Thexa.Internal.Unicode.Properties (PropertyMap)
+import Thexa.Internal.Unicode.Parser (readUnicodeDataFile)
 
 -- | A regular expression that matches a single extended grapheme cluster as defined by the Unicode
 -- standard.
