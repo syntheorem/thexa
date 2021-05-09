@@ -28,7 +28,7 @@ import Thexa.Internal.Regex.Compiler
 import Thexa.Position (GetNextByte)
 import Thexa.Rule
 
-type DFA = DFA.DFA (DFA.Dense Word32)
+type DFA = DFA.DFA DFA.Dense32
 
 -- | A precompiled lexer, parameterized on the types of its rules' modes, conditions, and actions.
 data Lexer mode cond act = Lexer

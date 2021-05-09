@@ -17,7 +17,11 @@ module Thexa.Internal.DFA
 -- * Representation of Transitions
 , Transitions
 , Dense
+, Dense16
+, Dense32
 , Sparse
+, Sparse16
+, Sparse32
 
 -- * Debugging
 , prettyPrint
@@ -220,7 +224,13 @@ newtype Dense ix = Dense (SV.Vector ix)
   deriving (Lift)
   deriving newtype (NFData)
 
-instance Transitions (Dense Word16) where
+-- | Dense 'DFA' transitions using 'Word16' indicies.
+type Dense16 = Dense Word16
+
+-- | Dense 'DFA' transitions using 'Word32' indicies.
+type Dense32 = Dense Word32
+
+instance Transitions Dense16 where
   transToSimple = denseToSimple
   transStep = denseStep
   transSize = denseSize
@@ -230,7 +240,7 @@ instance Transitions (Dense Word16) where
     | otherwise   = error "too many nodes to use Word16 indices"
     where n = V.length simpleVec
 
-instance Transitions (Dense Word32) where
+instance Transitions Dense32 where
   transToSimple = denseToSimple
   transStep = denseStep
   transSize = denseSize
@@ -315,6 +325,12 @@ data Sparse ix = Sparse
   -- elements trimmed off the start, and the length of the vector.
   deriving (Lift)
 
+-- | Sparse 'DFA' transitions using 'Word16' indicies.
+type Sparse16 = Sparse Word16
+
+-- | Sparse 'DFA' transitions using 'Word32' indicies.
+type Sparse32 = Sparse Word32
+
 instance NFData (Sparse ix) where
   rnf (Sparse v0 v1) = rnf v0 `seq` rnf v1
 
@@ -346,7 +362,7 @@ instance Storable SparseNode where
     x2 <- fromIntegral <$> peekByteOff @Word16 ptr 6
     pure (SparseNode x0 x1 x2)
 
-instance Transitions (Sparse Word16) where
+instance Transitions Sparse16 where
   transToSimple = sparseToSimple
   transStep = sparseStep
   transSize = sparseSize
@@ -356,7 +372,7 @@ instance Transitions (Sparse Word16) where
     | otherwise   = error "too many nodes to use Word16 indices"
     where n = V.length simpleVec
 
-instance Transitions (Sparse Word32) where
+instance Transitions Sparse32 where
   transToSimple = sparseToSimple
   transStep = sparseStep
   transSize = sparseSize

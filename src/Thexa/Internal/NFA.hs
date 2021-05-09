@@ -69,6 +69,9 @@ data NFA = NFA
   , nfaMatchNodes  :: !(NodeMap MatchKey)
   }
 
+instance NFData NFA where
+  rnf (NFA x1 x2) = rnf x1 `seq` rnf x2
+
 -- | A node (also called a state) of an NFA.
 --
 -- This is simply represented as an index into an array, so one must be careful to avoid mixing
@@ -85,6 +88,9 @@ data Transitions = Transitions
   , byteMap :: !(ByteMap NodeSet)
   -- ^ Map from bytes to the set of nodes we can transition to after consuming that byte.
   }
+
+instance NFData Transitions where
+  rnf (Transitions x1 x2) = rnf x1 `seq` rnf x2
 
 -- | A key to identify which pattern was matched.
 --

@@ -58,6 +58,7 @@ posStatePosition (PosState _ pos) = pos
 -- | Construct an initial 'PosState' given the input string.
 initPosState :: GetNextByte str -> str -> PosState
 initPosState nextByte str = PosState (findGraphemeBoundary nextByte str) (Position 0 0 0)
+{-# INLINE initPosState #-}
 
 -- | Update a 'PosState' for the next byte of the input stream.
 updatePosState
@@ -85,9 +86,10 @@ updatePosState nextByte tabSize b str (PosState remBytes Position{..})
   | otherwise     = PosState (remBytes - 1) (Position posLine posColumn (posOffset + 1))
   where
     remBytes' = findGraphemeBoundary nextByte str
+{-# INLINE updatePosState #-}
 
 -- | A precompiled 'DFA' which matches the 'grapheme' Regex for UTF-8 encoded text.
-graphemeDFA :: DFA.DFA (DFA.Dense Word16)
+graphemeDFA :: DFA.DFA DFA.Dense16
 graphemeDFA = $$(let dfa = DFA.fromNFA (compileRegex grapheme) in [|| dfa ||])
 
 -- | Given a UTF-8 encoded string, find the offset to the next grapheme boundary, in bytes.
@@ -95,12 +97,7 @@ graphemeDFA = $$(let dfa = DFA.fromNFA (compileRegex grapheme) in [|| dfa ||])
 -- This works by finding the longest match of the 'grapheme' regex. The regex will always match at
 -- least one code point, so the returned offset will always be positive for valid UTF-8. However, if
 -- the string is empty or not UTF-8, the regex may not match at all, resulting in an offset of zero.
---
--- The first argument is a 'ByteString.uncons'-like function which tells us how to split the first
--- character off from the string. Passing this as an argument lets us be generic over the particular
--- string type.
-findGraphemeBoundary :: (str -> Maybe (Word8, str)) -> str -> Int
--- TODO: benchmark this function
+findGraphemeBoundary :: GetNextByte str -> str -> Int
 findGraphemeBoundary getNextByte initStr
   | Just offset <- simpleBoundary = offset
   | otherwise = go 0 DFA.startNode initStr 0
@@ -123,7 +120,7 @@ findGraphemeBoundary getNextByte initStr
     -- In all other cases, we step the DFA as far as we can and then take the length of the longest
     -- sequence of bytes that the DFA matched.
     dfa = graphemeDFA
-    go i node str lastOffset
+    go !i node str !lastOffset
       | Just (b, str') <- getNextByte str
       , Just node' <- DFA.step dfa node b = go (i + 1) node' str'
           (if ILSet.null (DFA.matches dfa node') then lastOffset else i + 1)

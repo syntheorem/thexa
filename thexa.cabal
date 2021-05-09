@@ -10,6 +10,7 @@ extra-doc-files:
 
 extra-source-files:
   unicode/*.txt
+  bench/*.txt
 
 common deps
   build-depends:
@@ -151,7 +152,7 @@ benchmark bench
   hs-source-dirs: bench
   main-is: Bench.hs
   other-modules:
-    Thexa.PrimMapBench
+    Thexa.GraphemeBench
 
   build-depends:
       thexa

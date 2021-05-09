@@ -1,9 +1,9 @@
 import PreludePrime
 import Criterion.Main
 
-import qualified Thexa.PrimMapBench
+import qualified Thexa.GraphemeBench
 
 main :: IO ()
 main = defaultMain
-  [ bgroup "Thexa.PrimMap" Thexa.PrimMapBench.benchmarks
+  [ bgroup "Grapheme" Thexa.GraphemeBench.benchmarks
   ]

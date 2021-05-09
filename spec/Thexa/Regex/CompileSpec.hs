@@ -28,10 +28,10 @@ import Thexa.Regex (Regex, CharSet, re)
 -- To do this, we use this type to hold all forms of the compiled regex.
 data CompiledRegex = CR
   { nfa :: NFA
-  , dense16 :: DFA (DFA.Dense Word16)
-  , dense32 :: DFA (DFA.Dense Word32)
-  , sparse16 :: DFA (DFA.Sparse Word16)
-  , sparse32 :: DFA (DFA.Sparse Word32)
+  , dense16  :: DFA DFA.Dense16
+  , dense32  :: DFA DFA.Dense32
+  , sparse16 :: DFA DFA.Sparse16
+  , sparse32 :: DFA DFA.Sparse32
   }
 
 -- Compile a single regex.
@@ -276,10 +276,10 @@ shouldMatchWith :: HasCallStack
   -> CompiledRegex -> [Word8] -> Expectation
 shouldMatchWith f cr bs
   | Just err <- f (matchBytesNFA (nfa      cr) bs) = expectationFailure ("NFA failed: "<>err)
-  | Just err <- f (matchBytesDFA (dense16  cr) bs) = expectationFailure ("DFA (Dense Word16) failed: "<>err)
-  | Just err <- f (matchBytesDFA (dense32  cr) bs) = expectationFailure ("DFA (Dense Word32) failed: "<>err)
-  | Just err <- f (matchBytesDFA (sparse16 cr) bs) = expectationFailure ("DFA (Sparse Word16) failed: "<>err)
-  | Just err <- f (matchBytesDFA (sparse32 cr) bs) = expectationFailure ("DFA (Sparse Word32) failed: "<>err)
+  | Just err <- f (matchBytesDFA (dense16  cr) bs) = expectationFailure ("DFA Dense16 failed: "<>err)
+  | Just err <- f (matchBytesDFA (dense32  cr) bs) = expectationFailure ("DFA Dense32 failed: "<>err)
+  | Just err <- f (matchBytesDFA (sparse16 cr) bs) = expectationFailure ("DFA Sparse16 failed: "<>err)
+  | Just err <- f (matchBytesDFA (sparse32 cr) bs) = expectationFailure ("DFA Sparse32 failed: "<>err)
   | otherwise = pure ()
 
 propMatch :: CompiledRegex -> [Word8] -> Property
@@ -293,11 +293,11 @@ propMatchWith :: ()
   => (Maybe (MatchSet, [Word8]) -> Maybe String)
   -> CompiledRegex -> [Word8] -> Property
 propMatchWith f cr bs = conjoin
-  [ counterexample "NFA"                 $ go (matchBytesNFA (nfa      cr) bs)
-  , counterexample "DFA (Dense Word16)"  $ go (matchBytesDFA (dense16  cr) bs)
-  , counterexample "DFA (Dense Word32)"  $ go (matchBytesDFA (dense32  cr) bs)
-  , counterexample "DFA (Sparse Word16)" $ go (matchBytesDFA (sparse16 cr) bs)
-  , counterexample "DFA (Sparse Word32)" $ go (matchBytesDFA (sparse32 cr) bs)
+  [ counterexample "NFA"          $ go (matchBytesNFA (nfa      cr) bs)
+  , counterexample "DFA Dense16"  $ go (matchBytesDFA (dense16  cr) bs)
+  , counterexample "DFA Dense32"  $ go (matchBytesDFA (dense32  cr) bs)
+  , counterexample "DFA Sparse16" $ go (matchBytesDFA (sparse16 cr) bs)
+  , counterexample "DFA Sparse32" $ go (matchBytesDFA (sparse32 cr) bs)
   ]
   where
     go result = case f result of
