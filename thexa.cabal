@@ -25,6 +25,7 @@ common deps
     , prelude-prime
     , primitive
     , template-haskell >=2.16
+    , th-compat
     , vector
     , utf8-string
 

@@ -16,14 +16,15 @@ import Text.Megaparsec.Char qualified as P
 import Text.Megaparsec.Char.Lexer qualified as L
 
 import Data.FileEmbed (makeRelativeToProject)
-import Language.Haskell.TH (Q, TExp)
+import Language.Haskell.TH.Syntax.Compat (SpliceQ)
+import Language.Haskell.TH.Syntax.Compat qualified as TH
 import System.IO (FilePath, readFile)
 
 import Thexa.CharSet (CharSet)
 import Thexa.CharSet qualified as CS
 
-readUnicodeDataFile :: FilePath -> Q (TExp (Map String CharSet))
-readUnicodeDataFile file = do
+readUnicodeDataFile :: FilePath -> SpliceQ (Map String CharSet)
+readUnicodeDataFile file = TH.liftSplice do
   file' <- makeRelativeToProject file
   contents <- liftIO $ readFile file'
 
@@ -32,10 +33,10 @@ readUnicodeDataFile file = do
     Right charProps -> pure (Map.fromListWith CS.union charProps)
 
   let propMapList = Map.toAscList propMap
-  [|| Map.fromDistinctAscList propMapList ||]
+  TH.examineSplice [|| Map.fromDistinctAscList propMapList ||]
 
-readGraphemeBreakTest :: Q (TExp [[String]])
-readGraphemeBreakTest = do
+readGraphemeBreakTest :: SpliceQ [[String]]
+readGraphemeBreakTest = TH.liftSplice do
   let file = "unicode/GraphemeBreakTest.txt"
   file' <- makeRelativeToProject file
   contents <- liftIO $ readFile file'
@@ -44,7 +45,7 @@ readGraphemeBreakTest = do
     Left errs -> fail ("unable to parse Unicode data file\n"<>P.errorBundlePretty errs)
     Right res -> pure res
 
-  [|| result ||]
+  TH.examineSplice [|| result ||]
 
 type Parser = P.Parsec Void String
 

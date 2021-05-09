@@ -35,7 +35,6 @@ import Control.Monad.State (MonadState)
 import Control.Monad.State qualified as State
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
-import Language.Haskell.TH (TExpQ)
 
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
@@ -61,7 +60,7 @@ type Condition str mode userState token = Span -> str -> LexerState str mode use
 -- appears earliest in the list will be chosen.
 makeLexer :: LexerMode mode
   => [Rule mode (Condition str mode userState token) (Action str m)]
-  -> TExpQ (Lexer str mode userState token m)
+  -> SpliceQ (Lexer str mode userState token m)
 makeLexer = Core.makeLexer
 
 data LexerState str mode userState token = LexerState

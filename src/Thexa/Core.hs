@@ -18,7 +18,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Vector (Vector)
 import Data.Vector qualified as V
-import Language.Haskell.TH (TExpQ)
+import Language.Haskell.TH.Syntax.Compat qualified as TH
 
 import Thexa.Internal.DFA (MatchKey)
 import Thexa.Internal.DFA qualified as DFA
@@ -62,10 +62,10 @@ instance (NFData cond, NFData act) => NFData (Lexer mode cond act) where
 -- The order of the rules in the list is important; the resulting lexer will always prefer the
 -- longest match, but in the case that multiple rules match the same length of input, the rule that
 -- appears earliest in the list will be chosen.
-makeLexer :: forall mode cond act. LexerMode mode => [Rule mode cond act] -> TExpQ (Lexer mode cond act)
+makeLexer :: forall mode cond act. LexerMode mode => [Rule mode cond act] -> SpliceQ (Lexer mode cond act)
 makeLexer rules
   | modesAreValid = [|| Lexer dfas (V.fromListN matchListLen $$matchList) ||]
-  | otherwise = fail "invalid Enum instance for LexerMode"
+  | otherwise = TH.liftSplice $ fail "invalid Enum instance for LexerMode"
   where
     dfas = V.fromList $ map (DFA.fromNFA . compileRegexes) regexesByMode
 
@@ -91,7 +91,7 @@ makeLexer rules
     matchList = liftListWith liftMatchInfo rules
     matchListLen = length rules
 
-    liftMatchInfo :: Rule mode cond act -> TExpQ (MatchInfo cond act)
+    liftMatchInfo :: Rule mode cond act -> SpliceQ (MatchInfo cond act)
     liftMatchInfo rule = [|| MatchInfo
       { matchAction = $$matchAct
       , matchFollowedBy = fbDFA
@@ -107,7 +107,7 @@ makeLexer rules
           Nothing  -> [|| Nothing ||]
           Just act -> [|| Just $$act ||]
 
-    liftListWith :: (a -> TExpQ b) -> [a] -> TExpQ [b]
+    liftListWith :: (a -> SpliceQ b) -> [a] -> SpliceQ [b]
     liftListWith f = foldr (\a bsQ -> [|| $$(f a) : $$bsQ ||]) [|| [] ||]
 
 ---------------------

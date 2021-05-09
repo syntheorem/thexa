@@ -10,8 +10,9 @@ import PreludePrime
 import Data.Primitive.Types (Ptr(Ptr))
 import Foreign.ForeignPtr
 import GHC.Exts (Addr#)
-import Language.Haskell.TH.Syntax (Lift(liftTyped), TExp(TExp))
 import Language.Haskell.TH qualified as TH
+import Language.Haskell.TH.Syntax (Lift(liftTyped))
+import Language.Haskell.TH.Syntax.Compat (unsafeSpliceCoerce)
 
 import Data.Vector qualified as V
 import Data.Vector.Storable qualified as SV
@@ -26,13 +27,15 @@ instance Lift a => Lift (V.Vector a) where
 
 instance Storable a => Lift (SV.Vector a) where
   liftTyped vec = [|| unsafePerformIO do
-    fp <- newForeignPtr_ (Ptr $$(pure bytesAddr))
+    fp <- newForeignPtr_ (Ptr $$bytesAddr)
     pure (SV.unsafeFromForeignPtr0 fp nElems) ||]
     where
       (aPtr, nElems) = SV.unsafeToForeignPtr0 vec
 
-      bytesAddr :: TExp Addr#
-      bytesAddr = TExp (TH.LitE (TH.bytesPrimL bytes))
+      -- Use bytesPrimL to embed the bytes into the binary as an Addr# literal
+      bytesAddr = unsafeSpliceCoerce @_ @Addr#
+        (pure (TH.LitE (TH.bytesPrimL bytes)))
+
       bytes = TH.mkBytes bytesPtr 0 (fromIntegral nBytes)
       bytesPtr = castForeignPtr aPtr :: ForeignPtr Word8
       nBytes = nElems * sizeOf (undefined :: a)

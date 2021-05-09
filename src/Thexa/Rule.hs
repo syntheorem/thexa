@@ -2,6 +2,11 @@ module Thexa.Rule
 ( Rule(..)
 , LexerMode
 
+-- * Template Haskell splices
+-- | This type is re-exported from the @th-compat@ library. The type of typed TH splices was changed
+-- in GHC 9.0, so using this alias lets us transparently support earlier versions.
+, SpliceQ
+
 -- * Regular expressions
 , Regex
 , CharSet
@@ -25,7 +30,7 @@ import PreludePrime
 
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Language.Haskell.TH (TExpQ)
+import Language.Haskell.TH.Syntax.Compat (SpliceQ)
 
 import Thexa.Regex (Regex, CharSet, re, cs)
 
@@ -55,7 +60,7 @@ import Thexa.Regex (Regex, CharSet, re, cs)
 data Rule mode cond act = Rule
   { ruleRegex :: Regex
   -- ^ The regex that must be matched for the rule to match.
-  , ruleAction :: Maybe (TExpQ act)
+  , ruleAction :: Maybe (SpliceQ act)
   -- ^ The action that should be run when the rule matches. If this is absent, then the rule simply
   -- skips any input that it matches.
   , ruleFollowedBy :: Maybe Regex
@@ -66,7 +71,7 @@ data Rule mode cond act = Rule
   -- ^ The same as 'ruleFollowedBy' except that the rule only matches if this regex DOESN'T match
   -- the input immediately following the input matched by 'ruleRegex'. It is valid to include both a
   -- 'ruleFollowedBy' and a 'ruleNotFollowedBy'.
-  , ruleConditions :: [TExpQ cond]
+  , ruleConditions :: [SpliceQ cond]
   -- ^ The list of additional, user-defined conditions that must all be satisfied in order for the
   -- rule to match.
   , ruleModes :: Set mode
@@ -116,7 +121,7 @@ instance IsRule (Rule mode cond act) mode cond act where
 -- | Set 'ruleAction' to the given action.
 --
 -- Calls 'error' if 'ruleAction' has already been set for this rule.
-onMatch :: forall rule mode cond act. (Partial, IsRule rule mode cond act) => rule -> TExpQ act -> Rule mode cond act
+onMatch :: forall rule mode cond act. (Partial, IsRule rule mode cond act) => rule -> SpliceQ act -> Rule mode cond act
 onMatch (toRule @_ @_ @_ @act -> rule) action =
   case ruleAction rule of
     Nothing -> rule { ruleAction = Just action }
@@ -134,7 +139,7 @@ skipMatch (toRule -> rule) =
     Just _  -> error "lexer rule already has an onMatch action"
 
 -- | Prepend the given condition to 'ruleConditions'.
-matchIf :: IsRule rule mode cond act => rule -> TExpQ cond -> Rule mode cond act
+matchIf :: IsRule rule mode cond act => rule -> SpliceQ cond -> Rule mode cond act
 matchIf (toRule -> rule) cond = rule { ruleConditions = cond : ruleConditions rule }
 
 -- | Set 'ruleFollowedBy' to the given regex.
