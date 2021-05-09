@@ -13,6 +13,7 @@ module Thexa.Internal.DFA
 , startNode
 , step
 , matches
+, isMatchNode
 
 -- * Representation of Transitions
 , Transitions
@@ -122,7 +123,10 @@ step (DFA t _) = transStep t
 -- match node.
 matches :: DFA t -> Node -> MatchSet
 matches (DFA _ matchNodes) = fromMaybe ILSet.empty . flip ILMap.lookup matchNodes
-{-# INLINE matches #-}
+
+-- | Check if the given node is a match node.
+isMatchNode :: DFA t -> Node -> Bool
+isMatchNode (DFA _ matchNodes) = flip ILMap.member matchNodes
 
 -- | Simple but inefficient representation of DFA transitions. This is used as sort of an
 -- interchange format, where we convert an NFA to this and then convert that to the actual DFA

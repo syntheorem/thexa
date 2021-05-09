@@ -14,7 +14,6 @@ module Thexa.Position
 import PreludePrime
 
 import Thexa.Internal.DFA qualified as DFA
-import Thexa.Internal.IntLike.Set qualified as ILSet
 import Thexa.Internal.Regex.Compiler (compileRegex)
 import Thexa.Internal.Unicode.Grapheme (grapheme)
 
@@ -123,6 +122,6 @@ findGraphemeBoundary getNextByte initStr
     go !i node str !lastOffset
       | Just (b, str') <- getNextByte str
       , Just node' <- DFA.step dfa node b = go (i + 1) node' str'
-          (if ILSet.null (DFA.matches dfa node') then lastOffset else i + 1)
+          (if DFA.isMatchNode dfa node' then lastOffset else i + 1)
       | otherwise = lastOffset
 {-# INLINE findGraphemeBoundary #-}

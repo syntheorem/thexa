@@ -210,10 +210,8 @@ nextMatch (Lexer dfas matchVec) getNextByte evalCond mode = go
     -- Used to check the followedBy and notFollowedBy conditions.
     dfaCanMatch :: DFA -> DFA.Node -> str -> Bool
     dfaCanMatch fbDFA node str
-      | not (ILSet.null matches)          = True
+      | DFA.isMatchNode fbDFA node        = True
       | Just (b, str') <- getNextByte str
       , Just node' <- DFA.step dfa node b = dfaCanMatch fbDFA node' str'
       | otherwise                         = False
-      where
-        matches = DFA.matches fbDFA node
 {-# INLINE nextMatch #-}

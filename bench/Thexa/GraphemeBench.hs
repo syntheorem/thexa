@@ -10,7 +10,6 @@ import System.IO (FilePath)
 import Thexa.Position (findGraphemeBoundary)
 import Thexa.Internal.DFA (DFA)
 import Thexa.Internal.DFA qualified as DFA
-import Thexa.Internal.IntLike.Set qualified as ILSet
 import Thexa.Internal.Regex.Compiler (compileRegex)
 import Thexa.Internal.Unicode.Grapheme (grapheme)
 
@@ -71,7 +70,7 @@ dfaMatchLength dfa = go 0 0 DFA.startNode
     go !i !lastOffset node bs
       | Just (b, bs') <- BS.uncons bs
       , Just node' <- DFA.step dfa node b =
-          let lastOffset' = if ILSet.null (DFA.matches dfa node') then lastOffset else i + 1
+          let lastOffset' = if DFA.isMatchNode dfa node' then lastOffset else i + 1
           in go (i + 1) lastOffset' node' bs'
       | otherwise = lastOffset
 
