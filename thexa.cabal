@@ -158,6 +158,18 @@ benchmark bench
       thexa
     , criterion
 
+executable RustLexer
+  import: deps, lang, exe-opts
+  scope: private
+
+  hs-source-dirs: examples
+  main-is: RustLexer/Main.hs
+  other-modules:
+    RustLexer.Rules
+
+  build-depends:
+      thexa
+
 executable CompileGrapheme
   import: deps, lang, exe-opts
   scope: private
