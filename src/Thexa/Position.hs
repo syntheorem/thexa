@@ -1,5 +1,6 @@
 module Thexa.Position
 ( Position(..)
+, posLineOffset
 , Span(..)
 
 -- * Stateful position tracking
@@ -23,16 +24,29 @@ import Thexa.Internal.Unicode.Grapheme (grapheme)
 -- This means that it is possible for multiple code points (i.e. 'Char' values) to exist in the same
 -- column.
 data Position = Position
-  { posLine   :: {-# UNPACK #-} !Int
-  -- ^ Number of newline characters (@\n@) seen before this position.
-  , posColumn :: {-# UNPACK #-} !Int
+  { posLine       :: {-# UNPACK #-} !Int
+  -- ^ Number of newline characters (@\\n@, @\\r\\n@, or @\\r@) seen before this position.
+  , posColumn     :: {-# UNPACK #-} !Int
   -- ^ Number of characters seen on the current line before this position.
-  , posOffset :: {-# UNPACK #-} !Int
-  -- ^ Number of bytes in the UTF-8 encoded input stream seen before this position.
+  , posColOffset  :: {-# UNPACK #-} !Int
+  -- ^ Number of bytes in the current line seen before this position.
+  , posFileOffset :: {-# UNPACK #-} !Int
+  -- ^ Number of bytes in the input stream seen before this position.
   }
+  deriving (Eq, Ord, Show)
+
+-- | Number of bytes in the input stream seen before the beginning of the line this position is on.
+posLineOffset :: Position -> Int
+posLineOffset (Position{..}) = posFileOffset - posColOffset
 
 -- | The start and end positions of a span of characters.
-data Span = Span !Position !Position
+data Span = Span
+  { spanStart :: !Position
+  -- ^ The position of the first character in the span.
+  , spanEnd   :: !Position
+  -- ^ The position /after/ the last character in the span.
+  }
+  deriving (Eq, Ord, Show)
 
 -- | State to track the current position when iterating over a byte stream.
 --
@@ -54,12 +68,12 @@ type GetNextByte str = str -> Maybe (Word8, str)
 posStatePosition :: PosState -> Position
 posStatePosition (PosState _ pos) = pos
 
--- | Construct an initial 'PosState' given the input string.
+-- | Construct an initial 'PosState' given the UTF-8 encoded input string.
 initPosState :: GetNextByte str -> str -> PosState
-initPosState nextByte str = PosState (findGraphemeBoundary nextByte str) (Position 0 0 0)
+initPosState nextByte str = PosState (findGraphemeBoundary nextByte str) (Position 0 0 0 0)
 {-# INLINE initPosState #-}
 
--- | Update a 'PosState' for the next byte of the input stream.
+-- | Update a 'PosState' for the next byte of the UTF-8 encoded input stream.
 updatePosState
   :: GetNextByte str
   -> Int      -- ^ Tab size: the number of columns to advance when encountering @\t@.
@@ -71,20 +85,32 @@ updatePosState
 updatePosState nextByte tabSize b str (PosState remBytes Position{..})
   -- If we see a newline, just increment the line number. We can ignore the remaining bytes in the
   -- current character because a newline can't appear in the middle of a grapheme cluster.
-  | b == 0xA      = PosState remBytes' (Position (posLine + 1) 0 (posOffset + 1))
+  | b == nl       = PosState remBytes' (Position (posLine + 1) 0 0 (posFileOffset + 1))
+
+  -- If we see a carriage return, increment the line number only if it's the last byte in the
+  -- current character. This is because a \r\n sequence is considered a single character, so we'll
+  -- increment the line upon encountering the \n. But if we encounter an isolated \r, then we still
+  -- want to count it as a newline.
+  | b == cr
+  , remBytes <= 1 = PosState remBytes' (Position (posLine + 1) 0 0 (posFileOffset + 1))
 
   -- If we see a tab, increase the column count by the tab size. We can ignore the remaining bytes
   -- in the current character because a tab can't appear in the middle of a grapheme cluster.
-  | b == 0x9      = PosState remBytes' (Position posLine (posColumn + tabSize) (posOffset + 1))
+  | b == tab      = PosState remBytes' (Position posLine (posColumn + tabSize) (posColOffset + 1) (posFileOffset + 1))
 
   -- If this is the last byte in the current character, then increment the column number and
   -- determine the length of the next character.
-  | remBytes <= 1 = PosState remBytes' (Position posLine (posColumn + 1) (posOffset + 1))
+  | remBytes <= 1 = PosState remBytes' (Position posLine (posColumn + 1) (posColOffset + 1) (posFileOffset + 1))
 
   -- Otherwise we're still inside a single character, so simply decrement the remaining bytes.
-  | otherwise     = PosState (remBytes - 1) (Position posLine posColumn (posOffset + 1))
+  | otherwise     = PosState (remBytes - 1) (Position posLine posColumn (posColOffset + 1) (posFileOffset + 1))
   where
     remBytes' = findGraphemeBoundary nextByte str
+
+    -- byte values for \t, \n, and \r
+    tab = 0x9
+    nl  = 0xA
+    cr  = 0xD
 {-# INLINE updatePosState #-}
 
 -- | A precompiled 'DFA' which matches the 'grapheme' Regex for UTF-8 encoded text.
@@ -122,6 +148,6 @@ findGraphemeBoundary getNextByte initStr
     go !i node str !lastOffset
       | Just (b, str') <- getNextByte str
       , Just node' <- DFA.step dfa node b = go (i + 1) node' str'
-          (if DFA.isMatchNode dfa node' then lastOffset else i + 1)
+          (if DFA.isMatchNode dfa node' then i + 1 else lastOffset)
       | otherwise = lastOffset
 {-# INLINE findGraphemeBoundary #-}

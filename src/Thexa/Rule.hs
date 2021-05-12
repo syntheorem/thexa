@@ -2,11 +2,6 @@ module Thexa.Rule
 ( Rule(..)
 , LexerMode
 
--- * Template Haskell splices
--- | This type is re-exported from the @th-compat@ library. The type of typed TH splices was changed
--- in GHC 9.0, so using this alias lets us transparently support earlier versions.
-, SpliceQ
-
 -- * Regular expressions
 , Regex
 , CharSet
@@ -24,12 +19,22 @@ module Thexa.Rule
 , inModes
 , rulesInMode
 , rulesInModes
+
+-- * Template Haskell
+-- | 'SpliceQ' is re-exported from the @th-compat@ library. The type of typed TH splices was changed
+-- in GHC 9.0, so using this alias lets us transparently support earlier versions.
+--
+-- The 'Lift' class is re-exported because it can be convenient to derive for types used in your
+-- lexer actions, so this saves you from having to import the @template-haskell@ library to do so.
+, SpliceQ
+, Lift
 ) where
 
 import PreludePrime
 
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Language.Haskell.TH.Syntax (Lift)
 import Language.Haskell.TH.Syntax.Compat (SpliceQ)
 
 import Thexa.Regex (Regex, CharSet, re, cs)
@@ -39,20 +44,20 @@ import Thexa.Regex (Regex, CharSet, re, cs)
 -- The intent is not to construct this type directly, but rather use the rule combinators to
 -- construct a rule from a 'Regex'. For example:
 --
--- @@@
+-- @
 -- [re|(a|b)+|]
 --   `'followedBy'` [re|c|]
 --   `'matchIf'` [|| someCondition ||]
 --   `'onMatch'` [|| someAction ||]
--- @@@
+-- @
 --
 -- Note that multiple 'matchIf' clauses are allowed, and all clauses other than the regex itself are
 -- optional (but if 'onMatch' is omitted, then 'skipMatch' should be used instead).
 --
--- Conditions (including followedBy and notFollowedBy) are only checked AFTER the regex has matched,
--- and if the regex matches multiple lengths of input, then the conditions will be checked for each
--- length until they are satisfied, starting with the longest. The implication here is to avoid
--- using rules that use overly general regexes and then restrict the matches via conditions.
+-- Conditions (including 'followedBy' and 'notFollowedBy') are only checked AFTER the regex has
+-- matched, and if the regex matches multiple lengths of input, then the conditions will be checked
+-- for each length until they are satisfied, starting with the longest. The implication here is to
+-- avoid using rules that use overly general regexes and then restrict the matches via conditions.
 --
 -- However, lexer modes do not work like conditions in this respect, because rules which are not
 -- enabled for the active mode are not matched against in the first place. See 'LexerMode' for more
@@ -84,13 +89,11 @@ data Rule mode cond act = Rule
 -- A lexer can operate in one or more modes. Each mode is like a "sublexer" which only matches
 -- against rules which are active in its mode. Custom lexer mode types can easily be created:
 --
--- @@@
--- data MyLexerMode
---   = DefaultMode
---   | Mode1
---   | Mode2
---   deriving (Eq, Ord, Enum, Bounded)
--- @@@
+-- > data MyLexerMode
+-- >   = DefaultMode
+-- >   | Mode1
+-- >   | Mode2
+-- >   deriving (Eq, Ord, Enum, Bounded)
 --
 -- Essentially, a lexer mode is just an index into an array containing the state matchines used to
 -- match input for each mode. Rather than use the indices directly, we use a custom type to provide
@@ -115,7 +118,9 @@ class IsRule rule mode cond act where
 instance IsRule Regex mode cond act where
   toRule regex = Rule regex Nothing Nothing Nothing [] Set.empty
 
-instance IsRule (Rule mode cond act) mode cond act where
+instance
+  (mode' ~ mode, cond' ~ cond, act' ~ act) =>
+  IsRule (Rule mode' cond' act') mode cond act where
   toRule = id
 
 -- | Set 'ruleAction' to the given action.

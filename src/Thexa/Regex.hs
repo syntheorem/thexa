@@ -7,6 +7,9 @@ module Thexa.Regex
 , cs
 
 -- * Construction
+-- | These functions can be used to programatically construct 'Regex'es as an alternative to using
+-- the quasi-quoters. They are intended to be used with a qualified import, e.g.
+-- @import qualified Thexa.Regex as RE@.
 , char
 , chars
 , tryChars
@@ -46,8 +49,8 @@ char = AST.char
 -- it. So we have the regex quasi-quoter use this smart constructor when wrapping a char set,
 -- causing an exception (with a backtrace) to be thrown when we try to compile the regex. It's not
 -- an ideal error reporting mechanism, but the alternatives are silently generating a regex that
--- matches nothing or generating the error in the compiler, at which point we've lost context for
--- where the offending char set originated.
+-- matches nothing or generating the error in the regex compiler, at which point we've lost context
+-- for where the offending char set originated.
 chars :: Partial => CharSet -> Regex
 chars = AST.chars
 

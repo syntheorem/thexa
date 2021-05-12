@@ -70,7 +70,7 @@ dfaMatchLength dfa = go 0 0 DFA.startNode
     go !i !lastOffset node bs
       | Just (b, bs') <- BS.uncons bs
       , Just node' <- DFA.step dfa node b =
-          let lastOffset' = if DFA.isMatchNode dfa node' then lastOffset else i + 1
+          let lastOffset' = if DFA.isMatchNode dfa node' then i + 1 else lastOffset
           in go (i + 1) lastOffset' node' bs'
       | otherwise = lastOffset
 

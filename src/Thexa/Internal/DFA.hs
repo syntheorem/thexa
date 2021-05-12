@@ -56,33 +56,33 @@ import Thexa.Internal.Orphans ()
 -- | Deterministic Finite Automaton with byte-labeled transitions.
 --
 -- A DFA is a set of nodes (a.k.a. states) where each node has a set of transitions. A transition
--- indicates which node we should go to next based on the next byte of input. Unlike in an NFA, each
+-- indicates which node we should go to next based on the next byte of input. Unlike in an 'NFA', each
 -- transition maps to exactly one node, so the current state of a DFA is represented by a single
 -- node rather than a set of them.
 --
 -- A DFA can be implemented as a big 2D array, where each node is an index into the first dimension
 -- and the second dimension has 256 elements which give us the next node when indexed by the next
--- byte of input. I call this the *dense* representation, and it is very fast to simulate since
+-- byte of input. I call this the 'Dense' representation, and it is very fast to simulate since
 -- everything can be done as simple array indexing.
 --
 -- However, in the DFA generated for a typical lexer, most nodes don't have valid transitions for
 -- every possible byte of input, and in fact likely only accept a small subset of possible bytes.
 -- This means that the dense representation wastes a lot of space, which can be significant for a
--- large DFA. So there is also a *sparse* representation which essentially uses an additional level
+-- large DFA. So there is also a 'Sparse' representation which essentially uses an additional level
 -- of indirection to avoid storing the transition for every possible byte. This is somewhat slower
 -- but can potentially save a lot of memory, although how much memory depends on the specific DFA.
 --
 -- There is another optimization which is available for both DFA representations. We probably don't
--- need the full range of an @Int@ to represent the nodes, so we can save space by using a @Word16@
--- or @Word32@, depending on the number of nodes in the DFA. There are no @Word8@ variants because
--- at that point the DFA is very small anyway, and no @Word64@ variants because at that point the
--- DFA is too large to reasonably fit into memory.
+-- need the full range of an 'Int' to represent the node indices, so we can save space by using a
+-- 'Word16' or 'Word32', depending on the number of nodes in the DFA. There are no 'Word8' variants
+-- because at that point the DFA is very small anyway, and no 'Word64' variants because at that
+-- point the DFA is too large to reasonably fit into memory.
 --
 -- This choice of representations is enabled by @DFA@'s type parameter, which should be an instance
 -- of the 'Transitions' class. Although this forces the representation to be selected at compile
 -- time, it allows the compiler to specialize the 'step' function to the specific representation
 -- used, which is important for performance. The main difficulty is not knowing whether the DFA has
--- few enough nodes to use @Word16@ indices, which may require trial and error to determine.
+-- few enough nodes to use 'Word16' indices, which may require trial and error to determine.
 data DFA t = DFA !t !MatchNodes
   deriving (Lift)
 

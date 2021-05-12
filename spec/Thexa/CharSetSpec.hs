@@ -41,47 +41,50 @@ allBounds :: (Char -> Bool) -> CharSet -> Bool
 allBounds p cs = all p' (CS.toList cs)
   where p' (l, u) = p l && p u
 
+shouldBeCS :: HasCallStack => CharSet -> [(Char, Char)] -> Expectation
+shouldBeCS = shouldBe . CS.toList
+
 spec :: Spec
 spec = do
   describe "union" do
     specify "non-overlapping asc" $
       CS.union (CS.range 'a' 'b') (CS.range 'x' 'z')
-        `shouldBe` CS.unsafeFromList [('a', 'b'), ('x', 'z')]
+        `shouldBeCS` [('a', 'b'), ('x', 'z')]
 
     specify "non-overlapping desc" $
       CS.union (CS.range 'x' 'z') (CS.range 'a' 'b')
-        `shouldBe` CS.unsafeFromList [('a', 'b'), ('x', 'z')]
+        `shouldBeCS` [('a', 'b'), ('x', 'z')]
 
     specify "overlap left" $
       CS.union (CS.range 'a' 'm') (CS.range 'g' 'z')
-        `shouldBe` CS.unsafeFromList [('a', 'z')]
+        `shouldBeCS` [('a', 'z')]
 
     specify "overlap right" $
       CS.union (CS.range 'g' 'z') (CS.range 'a' 'm')
-        `shouldBe` CS.unsafeFromList [('a', 'z')]
+        `shouldBeCS` [('a', 'z')]
 
     specify "edge overlap left" $
       CS.union (CS.range 'a' 'm') (CS.range 'n' 'z')
-        `shouldBe` CS.unsafeFromList [('a', 'z')]
+        `shouldBeCS` [('a', 'z')]
 
     specify "edge overlap right" $
       CS.union (CS.range 'n' 'z') (CS.range 'a' 'm')
-        `shouldBe` CS.unsafeFromList [('a', 'z')]
+        `shouldBeCS` [('a', 'z')]
 
     specify "contained left" $
       CS.union (CS.range 'a' 'z') (CS.range 'n' 'x')
-        `shouldBe` CS.unsafeFromList [('a', 'z')]
+        `shouldBeCS` [('a', 'z')]
 
     specify "contained right" $
       CS.union (CS.range 'n' 'x') (CS.range 'a' 'z')
-        `shouldBe` CS.unsafeFromList [('a', 'z')]
+        `shouldBeCS` [('a', 'z')]
 
     specify "complex" $
       foldMap CS.unsafeFromList [ [('6', '9'), ('a', 'c')]
                                 , [('0', '5')]
                                 , [('1', '3'), ('a', 'd'), ('A', 'Z')]
                                 ]
-        `shouldBe` CS.unsafeFromList [('0', '9'), ('a', 'd'), ('A', 'Z')]
+        `shouldBeCS` [('0', '9'), ('a', 'd'), ('A', 'Z')]
 
     prop "union full x == full" $
       \x -> CS.union CS.full x === CS.full
@@ -95,31 +98,31 @@ spec = do
   describe "difference" do
     specify "non-overlapping asc" $
       CS.difference (CS.range 'a' 'b') (CS.range 'x' 'z')
-        `shouldBe` CS.unsafeFromList [('a', 'b')]
+        `shouldBeCS` [('a', 'b')]
 
     specify "non-overlapping desc" $
       CS.difference (CS.range 'x' 'z') (CS.range 'a' 'b')
-        `shouldBe` CS.unsafeFromList [('x', 'z')]
+        `shouldBeCS` [('x', 'z')]
 
     specify "overlap left" $
       CS.difference (CS.range 'a' 'm') (CS.range 'g' 'z')
-        `shouldBe` CS.unsafeFromList [('a', 'f')]
+        `shouldBeCS` [('a', 'f')]
 
     specify "overlap right" $
       CS.difference (CS.range 'g' 'z') (CS.range 'a' 'm')
-        `shouldBe` CS.unsafeFromList [('n', 'z')]
+        `shouldBeCS` [('n', 'z')]
 
     specify "contained left" $
       CS.difference (CS.range 'a' 'z') (CS.range 'n' 'x')
-        `shouldBe` CS.unsafeFromList [('a', 'm'), ('y', 'z')]
+        `shouldBeCS` [('a', 'm'), ('y', 'z')]
 
     specify "contained right" $
       CS.difference (CS.range 'n' 'x') (CS.range 'a' 'z')
-        `shouldBe` CS.unsafeFromList []
+        `shouldBeCS` []
 
     specify "complement" $
       CS.complement (CS.range 'b' 'y')
-        `shouldBe` CS.unsafeFromList [(minBound, 'a'), ('z', maxBound)]
+        `shouldBeCS` [(minBound, 'a'), ('z', maxBound)]
 
     prop "difference (union x y) y == difference x y" $
       \x y -> CS.difference (CS.union x y) y === CS.difference x y

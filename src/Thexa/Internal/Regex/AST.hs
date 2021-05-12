@@ -10,6 +10,9 @@ import Thexa.CharSet qualified as CS
 import Thexa.Internal.CharSet.AST (CharSetAST, IsCharSet(fromCharSet))
 import Thexa.Internal.CharSet.AST qualified as CS (fromAST, normalize)
 
+-- | An abstract representation of a regular expression.
+--
+-- Please consider the aliased type to be an internal implementation detail.
 type Regex = RegexAST' CharSet Void
 type RegexAST = RegexAST' CharSetAST String
 
@@ -25,7 +28,7 @@ data RegexAST' cs s
 
   -- | Matches strings which match the regex @n@ or more times.
   --
-  -- If the second argument is provided, the number of times it will match after the minimum is
+  -- If the third argument is provided, the number of times it will match after the minimum is
   -- bounded by that argument. So given @n@ and @Just m@, this will match the regex between @n@ and
   -- @n + m@ times, inclusive.
   | Repeat (RegexAST' cs s) Natural (Maybe Natural)

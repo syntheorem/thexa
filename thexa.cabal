@@ -44,7 +44,6 @@ common lang
     DeriveLift
     DerivingStrategies
     DerivingVia
-    DuplicateRecordFields
     EmptyCase
     ExplicitNamespaces
     FlexibleContexts
@@ -167,4 +166,3 @@ executable CompileGrapheme
   main-is: CompileGrapheme.hs
   build-depends:
       thexa
-    , compact

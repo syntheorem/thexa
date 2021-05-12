@@ -1,3 +1,9 @@
+-- | The primitive interface to the lexer.
+--
+-- Compared to the main "Thexa" module, this module presents a less featureful, but more flexible,
+-- interface for running a lexer. It does not manage any lexer state for you, and instead just
+-- provides the 'nextMatch' function to find a single match at a time. If the features provided by
+-- "Thexa" are not suitable for your use case, you can instead build on top of "Thexa.Core".
 module Thexa.Core
 ( module Thexa.Rule
 
@@ -116,8 +122,8 @@ makeLexer rules
 
 -- | Type of the function used to evaluate rule conditions.
 --
--- The function is provided the input stream at the start of the match, the input stream at the end
--- of the match, and the condition to evaluate. Returns whether the condition was satisfied.
+-- The function is provided the input stream at the start of the match, the input stream after the
+-- match, and the condition to evaluate. Returns whether the condition was satisfied.
 type EvalCondition str cond = str -> str -> cond -> Bool
 
 -- | Result of trying to get the 'nextMatch' of the input.
@@ -144,6 +150,11 @@ data MatchResult str act
   | MatchEOF
 
 -- | Attempts to find the next match from the start of the provided input stream.
+--
+-- This function is inlined when applied to all of its arguments, so it is recommended to create a
+-- wrapper function which calls this with the specific values for your lexer. The main reason for
+-- this is so the 'GetNextByte' function can be inlined into /this/ function and hopefully optimized
+-- to avoid actually creating a boxed 'Word8' value for every byte.
 nextMatch :: forall mode cond act str
    . LexerMode mode
   => Lexer mode cond act    -- ^ The lexer to match the input against.
@@ -152,22 +163,18 @@ nextMatch :: forall mode cond act str
   -> mode                   -- ^ The currently active mode for the lexer.
   -> str                    -- ^ The input stream to match.
   -> MatchResult str act
-nextMatch (Lexer dfas matchVec) getNextByte evalCond mode = go
+nextMatch (Lexer dfas matchVec) getNextByte evalCond mode initStr =
+  case find (validMatch initStr) matches of
+    Just (str', MatchInfo{matchAction=mAct})
+      | Just act <- mAct -> MatchAction str' act
+      | Nothing  <- mAct -> MatchSkip str'
+    _ | isEOF            -> MatchEOF
+    _ | otherwise        -> MatchError
   where
     dfa = (V.!) dfas (fromEnum mode)
 
-    -- This is a separate function so we can inline nextMatch when it's applied to only the first
-    -- three arguments.
-    go :: str -> MatchResult str act
-    go str = case find (validMatch str) matchStack of
-      Just (str', MatchInfo{matchAction=mAct})
-        | Just act <- mAct -> MatchAction str' act
-        | Nothing  <- mAct -> MatchSkip str'
-      _ | isEOF            -> MatchEOF
-      _ | otherwise        -> MatchError
-      where
-        matchStack = buildMatchStack DFA.startNode str []
-        isEOF = isNothing (getNextByte str)
+    isEOF = isNothing (getNextByte initStr)
+    matches = buildMatchStack DFA.startNode initStr []
 
     -- Recursively build the "match stack" for the given input stream. The idea is we step the DFA
     -- as far as we can along the input. At each step, we push any possible matches onto the match

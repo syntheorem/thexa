@@ -21,7 +21,7 @@ module Thexa.CharSet
 , delete
 , deleteRange
 
--- * Combining
+-- * Set operations
 , union
 , difference
 , intersection
@@ -61,15 +61,18 @@ data CharSet
 -- 3. Adjacent ranges are not mergeable into a single range containing exactly the union of both
 -- ranges, so for @Cons l1 u1 (Cons l2 u2 _)@, @l2 > u1 + 1@.
 
+-- | Uses 'union' for this instance.
 instance Semigroup CharSet where
   (<>) = union
 
 instance Monoid CharSet where
   mempty = empty
 
+-- | Constructs a 'CharSet' containing every character in the string.
 instance IsString CharSet where
   fromString = foldMap singleton
 
+-- | Shows the 'CharSet' as a list of character ranges.
 instance Show CharSet where
   showsPrec p = showsPrec p . toList
 
@@ -218,6 +221,6 @@ fromList = foldl' union empty . map (uncurry range)
 
 -- | Construct from a list that already satisfies the CharSet invariants.
 --
--- Basically just used for testing.
+-- This is only used for testing and should be considered an internal API.
 unsafeFromList :: [(Char, Char)] -> CharSet
 unsafeFromList = foldr (uncurry Cons) Nil
