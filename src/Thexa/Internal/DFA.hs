@@ -1,4 +1,4 @@
-{-# OPTIONS_GHC -Wno-partial-type-signatures #-}
+{-# OPTIONS_GHC -Wno-partial-type-signatures -Wno-missing-signatures #-}
 
 -- TODO: after benchmarking, consider the following options:
 -- 1. get rid of the whole IntLike thing, just use Map and Set instead
@@ -42,8 +42,16 @@ import Data.Vector.Mutable qualified as MV
 import Data.Vector.Storable qualified as SV
 import Data.Vector.Storable.Mutable qualified as SMV
 import Foreign.Storable (Storable(sizeOf, alignment, peek, poke, peekByteOff, pokeByteOff))
-import Language.Haskell.TH.Syntax (Lift)
 import Numeric (showHex)
+
+-- imports for lifting storable vectors
+import Data.Primitive.Types (Ptr(Ptr))
+import Foreign.ForeignPtr
+import GHC.Exts (Addr#)
+import Language.Haskell.TH qualified as TH
+import Language.Haskell.TH.Syntax (Lift(liftTyped))
+import Language.Haskell.TH.Syntax.Compat (unsafeSpliceCoerce)
+import System.IO.Unsafe (unsafePerformIO)
 
 import Thexa.Internal.IntLike.Class (IntLike)
 import Thexa.Internal.IntLike.Map qualified as ILMap
@@ -51,7 +59,6 @@ import Thexa.Internal.IntLike.Set qualified as ILSet
 import Thexa.Internal.GrowVector qualified as GV
 import Thexa.Internal.NFA (NFA, MatchKey, MatchSet, ByteMap)
 import Thexa.Internal.NFA qualified as NFA
-import Thexa.Internal.Orphans ()
 
 -- | Deterministic Finite Automaton with byte-labeled transitions.
 --
@@ -225,7 +232,6 @@ lookupNode nodes = do
 
 -- | Dense 'DFA' transitions representation.
 newtype Dense ix = Dense (SV.Vector ix)
-  deriving (Lift)
   deriving newtype (NFData)
 
 -- | Dense 'DFA' transitions using 'Word16' indicies.
@@ -302,7 +308,7 @@ denseStep (Dense denseVec) (Node i) b
     i' = fromIntegral ((SV.!) denseVec (256*i + fromIntegral b))
 
 denseSize :: forall ix. Storable ix => Dense ix -> Int
-denseSize (Dense denseVec) = SV.length denseVec * sizeOf (undefined :: ix)
+denseSize (Dense denseVec) = svSizeInBytes denseVec
 
 ------------------------
 -- Sparse Transitions --
@@ -327,7 +333,6 @@ data Sparse ix = Sparse
   -- We then concatenate these trimmed transition arrays into a single vector. So to lookup a
   -- transition for a node, we need the offset of its transition array in this vector, the number of
   -- elements trimmed off the start, and the length of the vector.
-  deriving (Lift)
 
 -- | Sparse 'DFA' transitions using 'Word16' indicies.
 type Sparse16 = Sparse Word16
@@ -476,10 +481,42 @@ sparseToSimple (Sparse nodesVec transVec) = V.map toTransMap (V.convert nodesVec
       ]
 
 sparseSize :: forall ix. Storable ix => Sparse ix -> Int
-sparseSize (Sparse nodesVec transVec) = nodesVecSize + transVecSize
-  where
-    nodesVecSize = SV.length nodesVec * sizeOf (undefined :: SparseNode)
-    transVecSize = SV.length transVec * sizeOf (undefined :: ix)
+sparseSize (Sparse nodesVec transVec) = svSizeInBytes nodesVec + svSizeInBytes transVec
+
+--------------------
+-- Lift Instances --
+--------------------
+
+instance Storable ix => Lift (Dense ix) where
+  liftTyped (Dense vec) = [|| Dense $$(liftSV vec) ||]
+
+instance Storable ix => Lift (Sparse ix) where
+  liftTyped (Sparse v0 v1) = [|| Sparse $$(liftSV v0) $$(liftSV v1) ||]
+
+-- If we lift vectors for these DFAs using the normal Lift instance, they end up calling fromList on
+-- a very large list, which generates a massive amount of syntax and GHC takes a long time to
+-- compile it. But in TH 2.16, they added the ability to directly embed an array of bytes, which is
+-- both far faster to compile and more efficient at run time
+--
+-- Below is the type signature for TH 2.16, but it changes in 2.17, so just let it be inferred.
+--
+-- liftSV :: Storable a => SV.Vector a -> TH.TExpQ (SV.Vector a)
+liftSV vec = [|| unsafePerformIO do
+    fp <- newForeignPtr_ (Ptr $$bytesAddr)
+    pure (SV.unsafeFromForeignPtr0 fp nElems) ||]
+    where
+      (aPtr, nElems) = SV.unsafeToForeignPtr0 vec
+
+      -- Use bytesPrimL to embed the bytes into the binary as an Addr# literal
+      bytesAddr = unsafeSpliceCoerce @_ @Addr#
+        (pure (TH.LitE (TH.bytesPrimL bytes)))
+
+      bytes = TH.mkBytes bytesPtr 0 (fromIntegral nBytes)
+      bytesPtr = castForeignPtr aPtr :: ForeignPtr Word8
+      nBytes = svSizeInBytes vec
+
+svSizeInBytes :: forall a. Storable a => SV.Vector a -> Int
+svSizeInBytes vec = SV.length vec * sizeOf (undefined :: a)
 
 ---------------
 -- Debugging --

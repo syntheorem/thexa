@@ -24,6 +24,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Vector (Vector)
 import Data.Vector qualified as V
+import Instances.TH.Lift ()
 import Language.Haskell.TH.Syntax.Compat qualified as TH
 
 import Thexa.Internal.DFA (MatchKey)

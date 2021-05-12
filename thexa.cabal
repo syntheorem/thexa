@@ -26,6 +26,7 @@ common deps
     , primitive
     , template-haskell >=2.16
     , th-compat
+    , th-lift-instances ^>=0.1.18
     , vector
     , utf8-string
 
@@ -117,7 +118,6 @@ library
     Thexa.Internal.IntLike.Map
     Thexa.Internal.IntLike.Set
     Thexa.Internal.NFA
-    Thexa.Internal.Orphans
     Thexa.Internal.Regex.AST
     Thexa.Internal.Regex.Compiler
     Thexa.Internal.Regex.Parser
