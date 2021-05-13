@@ -1,8 +1,6 @@
 {-# LANGUAGE CPP #-}
 module Thexa.Internal.IntLike.Class where
 
-import PreludePrime
-
 -- | Class for types which can be losslessly converted to 'Int' and back.
 --
 -- Laws of this class:

@@ -30,8 +30,6 @@ module Thexa.Rule
 , Lift
 ) where
 
-import PreludePrime
-
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Language.Haskell.TH.Syntax (Lift)

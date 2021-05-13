@@ -3,8 +3,6 @@ module Thexa.Internal.Regex.Compiler
 , compileRegex
 ) where
 
-import PreludePrime
-
 import Data.Char (chr, ord)
 import Data.Bits ((.&.), (.|.), shiftR, shiftL, complement, countTrailingZeros)
 import Data.Maybe (fromJust)

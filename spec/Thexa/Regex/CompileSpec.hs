@@ -1,7 +1,5 @@
 module Thexa.Regex.CompileSpec where
 
-import PreludePrime
-
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck

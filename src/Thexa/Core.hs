@@ -18,8 +18,6 @@ module Thexa.Core
 , nextMatch
 ) where
 
-import PreludePrime
-
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Vector (Vector)

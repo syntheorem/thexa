@@ -1,6 +1,5 @@
 module Thexa.PositionSpec where
 
-import PreludePrime
 import Test.Hspec
 
 import Data.ByteString qualified as BS

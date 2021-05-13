@@ -1,6 +1,5 @@
 module Thexa.GraphemeBench where
 
-import PreludePrime
 import Criterion
 
 import Data.ByteString (ByteString)

@@ -1,6 +1,6 @@
 module Thexa.Internal.Regex.AST where
 
-import PreludePrime
+import Prelude hiding (concat)
 
 import Data.Foldable (foldr1)
 import Data.String (IsString(fromString))

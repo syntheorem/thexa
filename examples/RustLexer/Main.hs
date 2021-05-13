@@ -1,7 +1,5 @@
 module Main where
 
-import PreludePrime
-
 import Data.List qualified as List
 import Data.ByteString qualified as BS
 import System.IO qualified as IO

@@ -36,8 +36,6 @@ module Thexa
 , LexerInput(..)
 ) where
 
-import PreludePrime
-
 import Control.Monad.State (MonadState)
 import Control.Monad.State qualified as State
 import Data.Sequence (Seq)

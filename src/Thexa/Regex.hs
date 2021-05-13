@@ -27,7 +27,7 @@ module Thexa.Regex
 , repeatBounded
 ) where
 
-import PreludePrime
+import Prelude hiding (concat)
 
 import Thexa.CharSet (CharSet)
 import Thexa.Internal.Regex.AST (Regex)

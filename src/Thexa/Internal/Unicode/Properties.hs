@@ -1,7 +1,5 @@
 module Thexa.Internal.Unicode.Properties where
 
-import PreludePrime
-
 -- In a few places, we insert values in a map that we've looked up from another map using (!), which
 -- will error if the value is not in the map. By using a strict map, we ensure these values will be
 -- evaluated so that our tests will trigger any potential errors as long as we evaluate the maps.

@@ -73,7 +73,7 @@ module Thexa.Internal.IntLike.Map
 , findMax
 ) where
 
-import PreludePrime
+import Prelude
   hiding (empty, toList, null, foldr, foldl, foldr', foldl')
 
 import Text.Read qualified as Read

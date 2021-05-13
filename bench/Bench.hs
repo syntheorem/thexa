@@ -1,6 +1,6 @@
-import PreludePrime
-import Criterion.Main
+module Main where
 
+import Criterion.Main
 import qualified Thexa.GraphemeBench
 
 main :: IO ()

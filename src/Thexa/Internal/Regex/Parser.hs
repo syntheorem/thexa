@@ -9,8 +9,6 @@ module Thexa.Internal.Regex.Parser
 , parseErrorsPretty
 ) where
 
-import PreludePrime
-
 import Data.Char qualified as Char
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set

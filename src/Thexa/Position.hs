@@ -12,8 +12,6 @@ module Thexa.Position
 , findGraphemeBoundary
 ) where
 
-import PreludePrime
-
 import Thexa.Internal.DFA qualified as DFA
 import Thexa.Internal.Regex.Compiler (compileRegex)
 import Thexa.Internal.Unicode.Grapheme (grapheme)

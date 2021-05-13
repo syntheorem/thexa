@@ -30,12 +30,11 @@ module Thexa.Internal.DFA
 , computeStats
 ) where
 
-import PreludePrime
-
 import Control.Monad.Reader (ReaderT, runReaderT, ask, asks, lift)
 import Control.Monad.ST (ST, runST)
 import Data.HashTable.ST.Basic qualified as HT
-import Data.List (zip)
+import Data.List qualified as List
+import Data.Maybe (mapMaybe)
 import Data.Primitive.MutVar
 import Data.Vector qualified as V
 import Data.Vector.Mutable qualified as MV
@@ -283,7 +282,7 @@ denseToSimple (Dense denseVec) = runST do
   vec <- MV.new n
 
   for_ [0..(n - 1)] \i -> do
-    let ts = filterMap (indexTrans i) [0..255]
+    let ts = mapMaybe (indexTrans i) [0..255]
     MV.write vec i (ILMap.fromDistinctAscList ts)
 
   V.unsafeFreeze vec
@@ -476,7 +475,7 @@ sparseToSimple (Sparse nodesVec transVec) = V.map toTransMap (V.convert nodesVec
     toTransMap :: SparseNode -> ByteMap Node
     toTransMap (SparseNode transStart transLen byteOff) = ILMap.fromList
       [ (fromIntegral byte, Node (fromIntegral ix))
-      | (byte, ix) <- zip [byteOff..] $ SV.toList $ SV.slice transStart transLen transVec
+      | (byte, ix) <- List.zip [byteOff..] $ SV.toList $ SV.slice transStart transLen transVec
       , fromIntegral ix < nNodes
       ]
 
@@ -524,7 +523,7 @@ svSizeInBytes vec = SV.length vec * sizeOf (undefined :: a)
 
 -- | Pretty-print a human-readable description of the DFA structure for debugging purposes.
 prettyPrint :: Transitions t => DFA t -> String
-prettyPrint dfa@(DFA t _) = foldMap ppNode $ zip [0..] $ toList $ transToSimple t
+prettyPrint dfa@(DFA t _) = foldMap ppNode $ List.zip [0..] $ toList $ transToSimple t
   where
     ppNode :: (Int, ByteMap Node) -> String
     ppNode (i, ts)

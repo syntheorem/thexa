@@ -22,13 +22,17 @@ common deps
     , hashtables
     , megaparsec
     , mtl
-    , prelude-prime
     , primitive
+    , synlude ^>=0.1
     , template-haskell >=2.16
     , th-compat
     , th-lift-instances ^>=0.1.18
     , vector
     , utf8-string
+
+  mixins:
+      base hiding (Prelude)
+    , synlude (Synlude as Prelude)
 
 common lang
   default-language: Haskell2010
@@ -60,7 +64,6 @@ common lang
     MultiWayIf
     MultiParamTypeClasses
     NamedFieldPuns
-    NoImplicitPrelude
     NoStarIsType
     OverloadedLabels
     OverloadedStrings

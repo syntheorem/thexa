@@ -1,7 +1,5 @@
 module Thexa.Internal.Regex.QuasiQuoters (re, cs) where
 
-import PreludePrime
-
 import Language.Haskell.TH (Q)
 import Language.Haskell.TH.Quote (QuasiQuoter(..))
 import Language.Haskell.TH qualified as TH

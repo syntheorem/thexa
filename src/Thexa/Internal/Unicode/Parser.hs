@@ -4,8 +4,6 @@ module Thexa.Internal.Unicode.Parser
 , readGraphemeBreakTest
 ) where
 
-import PreludePrime
-
 import Data.Char qualified as Char
 import Data.List qualified as List
 import Data.Map (Map)

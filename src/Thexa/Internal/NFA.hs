@@ -40,8 +40,6 @@ module Thexa.Internal.NFA
 , prettyPrint
 ) where
 
-import PreludePrime
-
 import Control.Monad.ST (ST, runST)
 import Data.List (zip)
 import Data.Primitive.MutVar

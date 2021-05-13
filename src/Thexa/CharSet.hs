@@ -37,7 +37,7 @@ module Thexa.CharSet
 , unsafeFromList
 ) where
 
-import PreludePrime hiding (empty, null, toList)
+import Prelude hiding (empty, null, toList)
 
 import Data.List (unfoldr)
 import Data.String (IsString(fromString))

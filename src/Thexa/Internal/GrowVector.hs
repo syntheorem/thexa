@@ -13,7 +13,7 @@ module Thexa.Internal.GrowVector
 , unsafeFreeze
 ) where
 
-import PreludePrime hiding (length)
+import Prelude hiding (length)
 
 import Control.Monad.Primitive (PrimMonad, PrimState)
 import Data.Vector (Vector, MVector)

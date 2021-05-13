@@ -1,8 +1,6 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Thexa.CharSetSpec where
 
-import PreludePrime
-
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck

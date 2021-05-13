@@ -1,8 +1,6 @@
 {-# OPTIONS_GHC -Wno-missing-signatures #-}
 module RustLexer.Rules where
 
-import PreludePrime
-
 import Control.Monad.State (State, evalState)
 import Control.Monad.Except (ExceptT, throwError, runExceptT)
 

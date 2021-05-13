@@ -1,7 +1,5 @@
 module Main where
 
-import PreludePrime
-
 import System.IO qualified as IO
 
 import Thexa.Internal.DFA qualified as DFA

@@ -1,7 +1,5 @@
 module Thexa.Regex.ParserSpec where
 
-import PreludePrime
-
 import Data.Map ((!))
 import Test.Hspec
 import Test.Hspec.Megaparsec

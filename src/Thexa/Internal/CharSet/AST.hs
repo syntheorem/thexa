@@ -1,6 +1,5 @@
 module Thexa.Internal.CharSet.AST where
 
-import PreludePrime
 import Data.Foldable (foldl1)
 import Data.String (IsString(fromString))
 
