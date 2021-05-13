@@ -14,21 +14,21 @@ extra-source-files:
 
 common deps
   build-depends:
-      base >=4.8 && <5
-    , bytestring
-    , containers
-    , file-embed
-    , hashable
-    , hashtables
-    , megaparsec
-    , mtl
-    , primitive
+      base >=4.8
+    , bytestring >=0.10.10 && <0.12
+    , containers ^>=0.6
+    , file-embed ^>=0.0.10
+    , hashable >=1.2 && <1.4
+    , hashtables ^>=1.2.3
+    , megaparsec ^>=9.0
+    , mtl ^>=2.2
+    , primitive >=0.6 && <0.8
     , synlude ^>=0.1
     , template-haskell >=2.16
-    , th-compat
+    , th-compat ^>=0.1
     , th-lift-instances ^>=0.1.18
-    , vector
-    , utf8-string
+    , vector ^>=0.12
+    , utf8-string ^>=1.0
 
   mixins:
       base hiding (Prelude)
@@ -144,9 +144,9 @@ test-suite spec
 
   build-depends:
       thexa
-    , hspec
-    , hspec-megaparsec
-    , QuickCheck
+    , hspec >=2.6 && <2.9
+    , hspec-megaparsec ^>=2.2
+    , QuickCheck >=2.12 && <2.15
 
 benchmark bench
   import: deps, lang, exe-opts
@@ -159,7 +159,7 @@ benchmark bench
 
   build-depends:
       thexa
-    , criterion
+    , criterion >=1 && <2
 
 executable RustLexer
   import: deps, lang, exe-opts
