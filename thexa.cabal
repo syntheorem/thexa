@@ -42,49 +42,33 @@ common lang
     BinaryLiterals
     BlockArguments
     ConstraintKinds
-    DataKinds
-    DefaultSignatures
     DeriveAnyClass
     DeriveGeneric
     DeriveLift
     DerivingStrategies
-    DerivingVia
-    EmptyCase
-    ExplicitNamespaces
     FlexibleContexts
     FlexibleInstances
-    FunctionalDependencies
-    GADTs
     GeneralizedNewtypeDeriving
     ImportQualifiedPost
     InstanceSigs
     LambdaCase
     LiberalTypeSynonyms
     MagicHash
-    MultiWayIf
     MultiParamTypeClasses
     NamedFieldPuns
     NoStarIsType
-    OverloadedLabels
     OverloadedStrings
     ParallelListComp
     PartialTypeSignatures
-    PatternSynonyms
-    PolyKinds
     QuasiQuotes
     RankNTypes
     RecordWildCards
-    RecursiveDo
     RoleAnnotations
     ScopedTypeVariables
-    StandaloneDeriving
-    StandaloneKindSignatures
     TemplateHaskell
     TupleSections
     TypeApplications
     TypeFamilies
-    TypeFamilyDependencies
-    TypeOperators
     ViewPatterns
 
 common opts
