@@ -1,0 +1,10 @@
+cradle:
+  cabal:
+    - path: "src"
+      component: "lib:thexa"
+    - path: "spec"
+      component: "thexa:test:spec"
+    - path: "bench"
+      component: "thexa:bench:bench"
+    - path: "examples/RustLexer"
+      component: "thexa:exe:RustLexer"
