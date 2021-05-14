@@ -159,12 +159,3 @@ executable RustLexer
 
   build-depends:
       thexa
-
-executable CompileGrapheme
-  import: deps, lang, exe-opts
-  scope: private
-
-  hs-source-dirs: exe
-  main-is: CompileGrapheme.hs
-  build-depends:
-      thexa
