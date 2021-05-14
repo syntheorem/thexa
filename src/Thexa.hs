@@ -1,4 +1,8 @@
-
+-- | This module provides a "batteries-included" interface to the lexer, allowing stateful monadic
+-- lexer actions and automatically managing the remaining input, character positions, lexer modes,
+-- and a list of tokens produced by your lexer actions. It is built as a layer on top of the more
+-- primitive interface provided by "Lexer.Core", so if the interface here doesn't meet your
+-- requirements, you can build one specialized to your application by importing that instead.
 module Thexa
 ( module Thexa.Rule
 , Lexer

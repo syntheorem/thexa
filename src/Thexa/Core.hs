@@ -170,8 +170,6 @@ nextMatch (Lexer dfas matchVec) getNextByte evalCond mode initStr =
     _ | isEOF            -> MatchEOF
     _ | otherwise        -> MatchError
   where
-    dfa = (V.!) dfas (fromEnum mode)
-
     isEOF = isNothing (getNextByte initStr)
     matches = buildMatchStack DFA.startNode initStr []
 
@@ -194,6 +192,7 @@ nextMatch (Lexer dfas matchVec) getNextByte evalCond mode initStr =
         -- a foldr respects this ordering since we'll fold over the match keys in descending order.
         matchStack' = ILSet.foldr pushMatch matchStack (DFA.matches dfa node)
         pushMatch k ms = (str, matchKeyToInfo k) : ms
+        dfa = (V.!) dfas (fromEnum mode)
 
     matchKeyToInfo :: MatchKey -> MatchInfo cond act
     matchKeyToInfo k = (V.!) matchVec k
@@ -202,12 +201,12 @@ nextMatch (Lexer dfas matchVec) getNextByte evalCond mode initStr =
     validMatch :: str -> (str, MatchInfo cond act) -> Bool
     validMatch str (str', match) = and
       [ case matchFollowedBy match of
-          Nothing    -> True
-          Just fbDFA -> dfaCanMatch fbDFA DFA.startNode str'
+          Nothing  -> True
+          Just dfa -> dfaCanMatch dfa DFA.startNode str'
 
       , case matchNotFollowedBy match of
-          Nothing    -> True
-          Just nfDFA -> not (dfaCanMatch nfDFA DFA.startNode str')
+          Nothing  -> True
+          Just dfa -> not (dfaCanMatch dfa DFA.startNode str')
 
       , all (evalCond str str') (matchConditions match)
       ]
@@ -215,9 +214,9 @@ nextMatch (Lexer dfas matchVec) getNextByte evalCond mode initStr =
     -- Returns whether the given DFA matches the input stream when starting from the given node.
     -- Used to check the followedBy and notFollowedBy conditions.
     dfaCanMatch :: DFA -> DFA.Node -> str -> Bool
-    dfaCanMatch fbDFA node str
-      | DFA.isMatchNode fbDFA node        = True
+    dfaCanMatch dfa node str
+      | DFA.isMatchNode dfa node          = True
       | Just (b, str') <- getNextByte str
-      , Just node' <- DFA.step dfa node b = dfaCanMatch fbDFA node' str'
+      , Just node' <- DFA.step dfa node b = dfaCanMatch dfa node' str'
       | otherwise                         = False
 {-# INLINE nextMatch #-}

@@ -134,13 +134,16 @@ test-suite spec
   type: exitcode-stdio-1.0
   build-tool-depends: hspec-discover:hspec-discover
 
-  hs-source-dirs: spec
+  hs-source-dirs: spec, examples
   main-is: Spec.hs
   other-modules:
     Thexa.CharSetSpec
     Thexa.PositionSpec
     Thexa.Regex.CompileSpec
     Thexa.Regex.ParserSpec
+
+    RustLexer.Rules
+    Thexa.RustLexerSpec
 
   build-depends:
       thexa

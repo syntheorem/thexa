@@ -449,6 +449,7 @@ invalidEscapeError :: Action
 invalidEscapeError span _ = throwError (InvalidEscape span)
 
 data Token = Token !TokenData !Span
+  deriving (Eq, Show)
 
 data TokenData
   -- Keywords
@@ -559,4 +560,4 @@ data TokenData
   -- Lifetimes and identifiers
   | TOK_Lifetime !(Maybe ByteString)
   | TOK_Ident !ByteString
-  deriving (Show)
+  deriving (Eq, Show)
