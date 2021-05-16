@@ -1,7 +1,7 @@
 Regular Expression Syntax and Semantics
 =======================================
 
-This document describes the syntax and semantics of the regular expressions parsed by Thexa's `re` and `cs` quasiquoters. A general understanding of regular expressions is assumed, and indeed the syntax is largely a subset of the syntax used by typical regex libraries.
+This document describes the syntax and semantics of the regular expressions parsed by Thexa's `re` and `cs` quasi-quoters. A general understanding of regular expressions is assumed, and indeed the syntax is largely a subset of the syntax used by typical regex libraries.
 
 Characters
 ----------
@@ -52,7 +52,7 @@ A string enclosed in double-quotes can be used to match a literal string of char
 > **Number** :
 >>  \[`0`-`9`\]\+
 
-A *quantifier* can be used as a suffix to allow a regex to match multiple times. Note that the quantifier only applies to the previous **RegexAtom**, not the entire preceeding regex. So `ab+` matches `abb` but not `abab`. To apply it to a larger regex, simply enclose the regex in parentheses or use a double-quoted string.
+A *quantifier* can be used as a suffix to allow a regex to match multiple times. Note that the quantifier only applies to the previous **RegexAtom**, not the entire preceding regex. So `ab+` matches `abb` but not `abab`. To apply it to a larger regex, simply enclose the regex in parentheses or use a double-quoted string.
 
 The most general form of the quantifier is the **RegexRepeater** enclosed in curly braces:
 
@@ -174,7 +174,7 @@ Splices
 > **CharSetSplice** :
 >>  `[:` _HaskellVar_ `:]`
 
-When creating a lexer, it can be useful to factor out common portions of a regex into a Haskell variable. These variables can then be *spliced* into a regex or charset quasiquotation using this splicing syntax. The variable must be in scope at the site of the quasiquotation usage.
+When creating a lexer, it can be useful to factor out common portions of a regex into a Haskell variable. These variables can then be *spliced* into a regex or charset quasi-quote using this splicing syntax. The variable must be in scope at the site of the quasi-quote usage.
 
 The **HaskellVar** production corresponds to the **qvarid** production in the (Haskell syntax reference)[https://www.haskell.org/onlinereport/haskell2010/haskellch10.html], and can therefore be qualified with a module name.
 
@@ -189,7 +189,7 @@ Omissions
 
 As is typical for a lexer, these regexes are intended to be compiled into a simple finite state machine, and don't support more advanced regex features such as lookahead, lookbehind, capture groups, or backreferences. This includes other features that rely on lookahead or lookbehind, such as matching the beginning or end of a line with `^` or `$`, or using `\b` to match word boundaries.
 
-There are also no built-in character classes such as `\s` or `[[:space:]]` to match whitespace characters. These are intended to be replaced by splices, and as such some common character classes are included in the `Thexa.CharClass` module as `CharSet` variables. Note also that `.` matches a literal period character rather than matching any character (or any non-newline character, depending on the regex engine settings). To match any character, use `[^]` (or `[^\n]`) instead.
+There are also no built-in character classes such as `\s` or `[[:space:]]` to match whitespace characters. These are intended to be replaced by splices. Note also that `.` matches a literal period character rather than matching any character (or any non-newline character, depending on the regex engine settings). To match any character, use `[^]` (or `[^\n]`) instead.
 
 Future Work
 -----------

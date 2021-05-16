@@ -1,7 +1,7 @@
 {-# OPTIONS_GHC -Wno-missing-signatures #-}
 module RustLexer.Rules where
 
-import Control.Monad.State (State, evalState)
+import Control.Monad.State.Strict (State, evalState)
 import Control.Monad.Except (ExceptT, throwError, runExceptT)
 
 import Data.ByteString (ByteString)
@@ -13,18 +13,126 @@ import Data.Char (digitToInt)
 import Data.String.UTF8 (UTF8)
 import Data.String.UTF8 qualified as UTF8
 
+-- We're hiding a few exports from Thexa so we can redefine them to be specific to our lexer.
 import Thexa hiding (Action, Condition, Lexer, Rule, runLexer)
 import Thexa qualified
 import Thexa.Regex qualified as RE
 
+-- First, we will define the types used by our lexer.
+
+-- This is the type of the tokens emitted by our lexer, which associates the actual token data
+-- (defined below) with its location in the source using Thexa's Span type.
+data Token = Token !TokenData !Span
+  deriving (Eq, Show)
+
+data TokenData
+  -- Keywords
+  = KW_as | KW_async | KW_await | KW_break | KW_const | KW_continue | KW_crate | KW_dyn | KW_else | KW_enum
+  | KW_extern | KW_false | KW_fn | KW_for | KW_if | KW_impl | KW_in | KW_let | KW_loop | KW_match | KW_mod
+  | KW_move | KW_mut | KW_pub | KW_ref | KW_return | KW_self | KW_Self | KW_static | KW_struct | KW_super
+  | KW_trait | KW_true | KW_type | KW_unsafe | KW_use | KW_where | KW_while
+
+  -- Symbols
+  | SYM_Plus | SYM_Minus | SYM_Star | SYM_Slash | SYM_Percent | SYM_Caret | SYM_Not | SYM_And | SYM_Or
+  | SYM_AndAnd | SYM_OrOr | SYM_Shl | SYM_Shr | SYM_PlusEq | SYM_MinusEq | SYM_StarEq | SYM_SlashEq
+  | SYM_PercentEq | SYM_CaretEq | SYM_AndEq | SYM_OrEq | SYM_ShlEq | SYM_ShrEq | SYM_Eq | SYM_EqEq | SYM_Ne
+  | SYM_Gt | SYM_Lt | SYM_Ge | SYM_Le | SYM_At | SYM_Underscore | SYM_Dot | SYM_DotDot | SYM_DotDotDot
+  | SYM_DotDotEq | SYM_Comma | SYM_Semi | SYM_Colon | SYM_PathSep | SYM_RArrow | SYM_FatArrow | SYM_Pound
+  | SYM_Dollar | SYM_Question
+
+  -- Delimiters
+  | DELIM_OpenBrace | DELIM_CloseBrace
+  | DELIM_OpenBracket | DELIM_CloseBracket
+  | DELIM_OpenParen | DELIM_CloseParen
+
+  -- Literals
+  | LIT_Char !Char
+  | LIT_ByteChar !Word8
+  -- We're wrapping the string contents with the UTF8 type so the Show instance will properly decode
+  -- it. Since all the other tokens are ASCII-only, we don't bother to use UTF8 anywhere else.
+  | LIT_String !(UTF8 ByteString)
+  | LIT_ByteString !ByteString
+  -- Normally we would also parse int and float literals into actual numeric types, but for
+  -- demonstration purposes it's not really necessary.
+  | LIT_Int !ByteString
+  | LIT_Float !ByteString
+
+  -- Lifetimes and identifiers
+  | TOK_Lifetime !(Maybe ByteString)
+  | TOK_Ident !ByteString
+  deriving (Eq, Show)
+
+-- A lexer can be defined with multiple modes. Each lexer rule specifies which modes it is active
+-- in, and the lexer operates in one mode at a time. Here we're primarily using modes to handle
+-- strings.
+data Mode
+  -- The first constructor is the default mode, which is active when we first start lexing input.
+  -- Any rule which doesn't explicitly define which modes it operates in is only active in the
+  -- default mode.
+  = MainMode
+  | StringMode
+  | ByteStringMode
+  | RawStringMode
+  | RawByteStringMode
+  | BlockCommentMode
+  -- These derives are necessary for a type to work as a lexer mode.
+  deriving (Eq, Ord, Enum, Bounded)
+
+-- This is the custom state for our lexer, which we're using to lex strings.
+data RLState = RLState
+  -- Rust has a construct called raw strings, which allow one to write strings without escaping
+  -- special characters. They are written like r#"string contents"#, where there can be any number
+  -- of # characters and the string only ends when the number of # characters at the end matches the
+  -- number of # characters at the beginning, so we track the number of # characters here so we can
+  -- know when the string ends.
+  { rawStringHashCount :: !Int
+  -- Since we use multiple rules to lex strings, we need to keep track of the position where the
+  -- string started so we can set the span correctly when we finally emit the string token.
+  , stringStartPos :: !Position
+  -- While in the string modes, we use a ByteString builder to accumulate the contents of the string
+  -- token.
+  , stringBuilder :: !BS.Builder
+  }
+
+-- Custom error type.
+data LexerError
+  = InvalidInput Position
+  | NonAsciiChar Position
+  | InvalidEscape Span
+  | UnfinishedString Position
+  | UnfinishedBlockComment
+
+-- This is the monad in which our lexer runs. We use the State monad to maintain the state of the
+-- lexer, with an ExceptT transformer to provide error handling. The first parameter to LexerState
+-- is our input string type, which in this case is a strict ByteString. Lazy ByteStrings and normal
+-- Strings are also supported.
 type LexerM = ExceptT LexerError (State (LexerState ByteString Mode RLState Token))
 
+-- Here we define type aliases for types exported by Thexa, but specialized to the specific types of
+-- our lexer.
+
+-- This is the actual type of our lexer.
 type Lexer = Thexa.Lexer ByteString Mode RLState Token LexerM
 
+-- This is the type of our lexer actions that are executed when a lexer rule is matched. Expanding
+-- Thexa.Action, we get the type:
+--
+-- Span -> ByteString -> LexerM ()
+--
+-- The first argument is the positional span of the input that was matched, and the second is the
+-- contents of the input that was matched.
 type Action = Thexa.Action ByteString LexerM
 
+-- This is the type of our lexer conditions. Conditions can be used to restrict when a rule matches
+-- in cases where regexes and modes are insufficient. Expanding Thexa.Condition, we get:
+--
+-- Span -> ByteString -> LexerState ByteString Mode RLState Token -> Bool
+--
+-- The first two arguments are the same as for Action, and the third argument is the state of the
+-- lexer after the match. The match is only used if the Condition evaluates to True.
 type Condition = Thexa.Condition ByteString Mode RLState Token
 
+-- This is the type of the rules for our lexer.
 type Rule = Thexa.Rule Mode Condition Action
 
 space = [cs|\t\n\v\f\r\ \u{85}\u{200E}\u{200F}\u{2028}\u{2029}|]
@@ -56,7 +164,6 @@ unicodeEscape = [re| \\u \{ {{unicodeHexLit}} \} |]
 unicodeHexLit = [re| 10[:hexDigit:]{4} | 0[:hexDigit:]{5} | [:hexDigit:]{1,5} |]
 
 outOfBoundsEscape = [re| {{byteEscape}} | \\u \{ [:hexDigit:]+ \} |]
-
 
 lexerRules :: [Rule]
 lexerRules =
@@ -376,21 +483,6 @@ bsHeadToChar bs = case Char8.uncons bs of
   Just (c, _) -> c
   Nothing -> error "empty bytestring"
 
-data Mode
-  = MainMode
-  | StringMode
-  | ByteStringMode
-  | RawStringMode
-  | RawByteStringMode
-  | BlockCommentMode
-  deriving (Eq, Ord, Enum, Bounded, Lift)
-
-data RLState = RLState
-  { rawStringHashCount :: !Int
-  , stringStartPos :: !Position
-  , stringBuilder :: !BS.Builder
-  }
-
 runLexer :: Lexer -> ByteString -> Either LexerError [Token]
 runLexer lexer str
   = flip evalState initState
@@ -427,13 +519,6 @@ displayPosition (Position line col _ _) = show line<>":"<>show col
 displaySpan :: Span -> String
 displaySpan (Span start end) = displayPosition start<>"-"<>displayPosition end
 
-data LexerError
-  = InvalidInput Position
-  | NonAsciiChar Position
-  | InvalidEscape Span
-  | UnfinishedString Position
-  | UnfinishedBlockComment
-
 displayLexerError :: LexerError -> String
 displayLexerError = \case
   InvalidInput pos -> "unrecognized input at "<>displayPosition pos
@@ -447,117 +532,3 @@ nonAsciiCharError (Span start _) _ = throwError (NonAsciiChar start)
 
 invalidEscapeError :: Action
 invalidEscapeError span _ = throwError (InvalidEscape span)
-
-data Token = Token !TokenData !Span
-  deriving (Eq, Show)
-
-data TokenData
-  -- Keywords
-  = KW_as
-  | KW_async
-  | KW_await
-  | KW_break
-  | KW_const
-  | KW_continue
-  | KW_crate
-  | KW_dyn
-  | KW_else
-  | KW_enum
-  | KW_extern
-  | KW_false
-  | KW_fn
-  | KW_for
-  | KW_if
-  | KW_impl
-  | KW_in
-  | KW_let
-  | KW_loop
-  | KW_match
-  | KW_mod
-  | KW_move
-  | KW_mut
-  | KW_pub
-  | KW_ref
-  | KW_return
-  | KW_self
-  | KW_Self
-  | KW_static
-  | KW_struct
-  | KW_super
-  | KW_trait
-  | KW_true
-  | KW_type
-  | KW_unsafe
-  | KW_use
-  | KW_where
-  | KW_while
-
-  -- Symbols
-  | SYM_Plus
-  | SYM_Minus
-  | SYM_Star
-  | SYM_Slash
-  | SYM_Percent
-  | SYM_Caret
-  | SYM_Not
-  | SYM_And
-  | SYM_Or
-  | SYM_AndAnd
-  | SYM_OrOr
-  | SYM_Shl
-  | SYM_Shr
-  | SYM_PlusEq
-  | SYM_MinusEq
-  | SYM_StarEq
-  | SYM_SlashEq
-  | SYM_PercentEq
-  | SYM_CaretEq
-  | SYM_AndEq
-  | SYM_OrEq
-  | SYM_ShlEq
-  | SYM_ShrEq
-  | SYM_Eq
-  | SYM_EqEq
-  | SYM_Ne
-  | SYM_Gt
-  | SYM_Lt
-  | SYM_Ge
-  | SYM_Le
-  | SYM_At
-  | SYM_Underscore
-  | SYM_Dot
-  | SYM_DotDot
-  | SYM_DotDotDot
-  | SYM_DotDotEq
-  | SYM_Comma
-  | SYM_Semi
-  | SYM_Colon
-  | SYM_PathSep
-  | SYM_RArrow
-  | SYM_FatArrow
-  | SYM_Pound
-  | SYM_Dollar
-  | SYM_Question
-
-  -- Delimiters
-  | DELIM_OpenBrace
-  | DELIM_CloseBrace
-  | DELIM_OpenBracket
-  | DELIM_CloseBracket
-  | DELIM_OpenParen
-  | DELIM_CloseParen
-
-  -- Literals
-  | LIT_Char !Char
-  | LIT_ByteChar !Word8
-  | LIT_String !(UTF8 ByteString)
-  | LIT_ByteString !ByteString
-  -- Normally we would also parse int and float literals into actual numeric types, but for
-  -- demonstration purposes it's not really necessary.
-  | LIT_Int !ByteString
-  | LIT_Float !ByteString
-
-  -- Lifetimes and identifiers
-  | TOK_Lifetime !(Maybe ByteString)
-  | TOK_Ident !ByteString
-  deriving (Eq, Show)

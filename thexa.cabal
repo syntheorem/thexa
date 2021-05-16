@@ -6,6 +6,7 @@ synopsis:       Template Haskell lEXical Analyzer
 build-type:     Simple
 
 extra-doc-files:
+  README.md
   SYNTAX.md
 
 extra-source-files:
