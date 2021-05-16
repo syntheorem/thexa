@@ -1,8 +1,14 @@
 cabal-version: 2.2
 
 name:           thexa
-version:        0.1.0.0
+version:        1.0.0.0
 synopsis:       Template Haskell lEXical Analyzer
+license:        MIT
+license-file:   LICENSE.txt
+author:         syntheorem
+maintainer:     syntheorem@gmail.com
+homepage:       https://github.com/syntheorem/thexa
+category:       Development, Parsing
 build-type:     Simple
 
 extra-doc-files:
