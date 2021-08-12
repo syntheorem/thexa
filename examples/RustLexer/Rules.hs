@@ -135,6 +135,8 @@ type Condition = Thexa.Condition ByteString Mode RLState Token
 -- This is the type of the rules for our lexer.
 type Rule = Thexa.Rule Mode Condition Action
 
+-- TODO: finish the tutorial comments for this example (sorry!)
+
 space = [cs|\t\n\v\f\r\ \u{85}\u{200E}\u{200F}\u{2028}\u{2029}|]
 
 decDigit = [cs|0-9|]

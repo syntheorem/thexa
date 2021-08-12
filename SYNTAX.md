@@ -176,7 +176,7 @@ Splices
 
 When creating a lexer, it can be useful to factor out common portions of a regex into a Haskell variable. These variables can then be *spliced* into a regex or charset quasi-quote using this splicing syntax. The variable must be in scope at the site of the quasi-quote usage.
 
-The **HaskellVar** production corresponds to the **qvarid** production in the (Haskell syntax reference)[https://www.haskell.org/onlinereport/haskell2010/haskellch10.html], and can therefore be qualified with a module name.
+The **HaskellVar** production corresponds to the **qvarid** production in the [Haskell syntax reference](https://www.haskell.org/onlinereport/haskell2010/haskellch10.html), and can therefore be qualified with a module name.
 
 The variable must have the type `Regex` or `CharSet` when used in a **RegexSplice** or **CharSetSplice**, respectively. Note that this means that a `CharSet` variable cannot be spliced directly into a regex using the **RegexSplice** syntax, but must use the **CharSetSplice** syntax. This syntax was chosen to resemble POSIX character classes in other regex syntaxes.
 
