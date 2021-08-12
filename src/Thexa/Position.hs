@@ -33,6 +33,9 @@ data Position = Position
   }
   deriving (Eq, Ord, Show)
 
+instance NFData Position where
+  rnf pos = pos `seq` ()
+
 -- | Number of bytes in the input stream seen before the beginning of the line this position is on.
 posLineOffset :: Position -> Int
 posLineOffset (Position{..}) = posFileOffset - posColOffset
@@ -45,6 +48,9 @@ data Span = Span
   -- ^ The position /after/ the last character in the span.
   }
   deriving (Eq, Ord, Show)
+
+instance NFData Span where
+  rnf span = span `seq` ()
 
 -- | State to track the current position when iterating over a byte stream.
 --
