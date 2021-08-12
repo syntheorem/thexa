@@ -17,8 +17,6 @@ module Thexa.Rule
 , notFollowedBy
 , inMode
 , inModes
-, rulesInMode
-, rulesInModes
 
 -- * Template Haskell
 -- | 'SpliceQ' is re-exported from the @th-compat@ library. The type of typed TH splices was changed
@@ -170,11 +168,3 @@ inMode (toRule -> rule) mode = rule { ruleModes = Set.insert mode (ruleModes rul
 -- | Insert all the given modes into 'ruleModes'.
 inModes :: (IsRule rule mode cond act, LexerMode mode) => rule -> [mode] -> Rule mode cond act
 inModes (toRule -> rule) (Set.fromList -> modes) = rule { ruleModes = Set.union modes (ruleModes rule)}
-
--- | Insert the given mode into 'ruleModes' for each rule in the list.
-rulesInMode :: LexerMode mode => mode -> [Rule mode cond act] -> [Rule mode cond act]
-rulesInMode mode = map (`inMode` mode)
-
--- | Insert the given modes into 'ruleModes' for each rule in the list.
-rulesInModes :: LexerMode mode => [mode] -> [Rule mode cond act] -> [Rule mode cond act]
-rulesInModes modes = map (`inModes` modes)

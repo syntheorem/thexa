@@ -178,9 +178,9 @@ runLexer lexer tabSize onEOF onError = loop
 
 {-# INLINABLE runLexer #-}
 
--- | Append a token to the end of 'tokens'.
+-- | Append a token to the end of 'tokens'. Strict in its argument.
 emitToken :: MonadLexer str mode userState token m => token -> m ()
-emitToken token = State.modify' \ls -> ls {tokens = tokens ls Seq.|> token}
+emitToken !token = State.modify' \ls -> ls {tokens = tokens ls Seq.|> token}
 
 -- | Get the tokens that have been emitted thus far.
 getTokens :: MonadLexer str mode userState token m => m (Seq token)
